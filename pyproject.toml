@@ -1,0 +1,214 @@
+[tool.poetry]
+name = "certify-studio"
+version = "0.1.0"
+description = "AI-Powered Certification Content Generation Platform"
+authors = ["Your Team <team@certifystudio.com>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://certifystudio.com"
+repository = "https://github.com/your-org/certify-studio"
+documentation = "https://docs.certifystudio.com"
+keywords = ["ai", "certification", "education", "cloud", "animation", "aws", "azure", "gcp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Education",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Education",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+# Core Framework
+fastapi = "^0.104.1"
+uvicorn = {extras = ["standard"], version = "^0.24.0"}
+pydantic = "^2.5.0"
+pydantic-settings = "^2.1.0"
+
+# Database and ORM
+sqlalchemy = "^2.0.23"
+alembic = "^1.13.1"
+asyncpg = "^0.29.0"
+redis = "^5.0.1"
+
+# Authentication and Security
+python-jose = {extras = ["cryptography"], version = "^3.3.0"}
+passlib = {extras = ["bcrypt"], version = "^1.7.4"}
+python-multipart = "^0.0.6"
+cryptography = "^41.0.7"
+
+# AWS Services
+boto3 = "^1.34.0"
+botocore = "^1.34.0"
+aioboto3 = "^12.0.0"
+
+# Azure Services
+azure-identity = "^1.15.0"
+azure-storage-blob = "^12.19.0"
+azure-cognitiveservices-vision-computervision = "^0.9.0"
+openai = "^1.3.0"
+
+# Google Cloud Services
+google-cloud-storage = "^2.10.0"
+google-cloud-aiplatform = "^1.38.0"
+google-auth = "^2.23.4"
+
+# Manim and Animation
+manim = "^0.18.0"
+manim-slides = "^5.1.0"
+cairo-lang = "^0.12.0"
+Pillow = "^10.1.0"
+opencv-python = "^4.8.1.78"
+
+# Diagram Generation
+diagrams = "^0.23.4"
+graphviz = "^0.20.1"
+svglib = "^1.5.1"
+reportlab = "^4.0.7"
+cairosvg = "^2.7.1"
+
+# AI and ML Libraries
+langchain = "^0.0.350"
+langchain-experimental = "^0.0.47"
+anthropic = "^0.7.8"
+transformers = "^4.36.0"
+torch = "^2.1.0"
+sentence-transformers = "^2.2.2"
+
+# Document Processing
+pypdf2 = "^3.0.1"
+python-docx = "^1.1.0"
+openpyxl = "^3.1.2"
+python-pptx = "^0.6.23"
+
+# Web Scraping and HTTP
+httpx = "^0.25.2"
+aiohttp = "^3.9.1"
+beautifulsoup4 = "^4.12.2"
+
+# Data Processing
+pandas = "^2.1.4"
+numpy = "^1.26.2"
+scipy = "^1.11.4"
+
+# Async and Concurrency
+aiofiles = "^23.2.1"
+celery = "^5.3.4"
+
+# Caching and Performance
+diskcache = "^5.6.3"
+
+# Logging and Monitoring
+loguru = "^0.7.2"
+structlog = "^23.2.0"
+prometheus-client = "^0.19.0"
+opentelemetry-api = "^1.21.0"
+opentelemetry-sdk = "^1.21.0"
+
+# Testing and Quality
+pytest = "^7.4.3"
+pytest-asyncio = "^0.21.1"
+pytest-cov = "^4.1.0"
+pytest-mock = "^3.12.0"
+factory-boy = "^3.3.0"
+faker = "^20.1.0"
+
+# Development Tools
+black = "^23.11.0"
+isort = "^5.12.0"
+flake8 = "^6.1.0"
+mypy = "^1.7.1"
+pre-commit = "^3.6.0"
+
+[tool.poetry.group.dev.dependencies]
+# Additional development dependencies
+ipython = "^8.17.2"
+jupyter = "^1.0.0"
+pytest-xdist = "^3.5.0"
+pytest-benchmark = "^4.0.0"
+
+[tool.poetry.group.docs.dependencies]
+# Documentation dependencies
+mkdocs = "^1.5.3"
+mkdocs-material = "^9.4.8"
+mkdocstrings = "^0.24.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+certify-studio = "certify_studio.main:main"
+certify-cli = "certify_studio.cli:main"
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["certify_studio"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "e2e: marks tests as end-to-end tests",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+]
