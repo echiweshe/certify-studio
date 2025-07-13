@@ -82,7 +82,8 @@ Next: Database models for persistence
 Building the future of technical education, one commit at a time! 🚀"
 
 # Show status
-git status
+
+
 
 echo "
 📊 Commit Summary:
