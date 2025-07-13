@@ -1,157 +1,202 @@
 """
-API Middleware Components
-
-Custom middleware for request logging, rate limiting, security headers,
-and other cross-cutting concerns.
+API middleware for authentication, rate limiting, logging, and error handling.
 """
 
 import time
 import uuid
-from typing import Callable
-import logging
+from datetime import datetime
+from typing import Callable, Optional
 
-from fastapi import Request, Response, HTTPException, status
+from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
-from ..config import settings
+from ..core.logging import get_logger
+from ..core.config import settings
+from .schemas import ErrorResponse, ErrorDetail, RateLimitResponse
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
-class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Log all incoming requests with timing information."""
+class RequestIDMiddleware(BaseHTTPMiddleware):
+    """Add request ID to all requests for tracking."""
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        # Generate request ID
-        request_id = str(uuid.uuid4())
+        # Get or generate request ID
+        request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+        
+        # Add to request state
         request.state.request_id = request_id
         
-        # Record start time
+        # Process request
+        response = await call_next(request)
+        
+        # Add request ID to response headers
+        response.headers["X-Request-ID"] = request_id
+        
+        return response
+
+
+class LoggingMiddleware(BaseHTTPMiddleware):
+    """Log all requests and responses."""
+    
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # Start timer
         start_time = time.time()
         
         # Log request
         logger.info(
-            f"Request started",
+            f"Request started: {request.method} {request.url.path}",
             extra={
-                "request_id": request_id,
+                "request_id": getattr(request.state, "request_id", None),
                 "method": request.method,
                 "path": request.url.path,
-                "client_host": request.client.host if request.client else None
+                "client": request.client.host if request.client else None
             }
         )
         
         # Process request
+        response = await call_next(request)
+        
+        # Calculate duration
+        duration = time.time() - start_time
+        
+        # Log response
+        logger.info(
+            f"Request completed: {request.method} {request.url.path} - {response.status_code}",
+            extra={
+                "request_id": getattr(request.state, "request_id", None),
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "duration": duration
+            }
+        )
+        
+        # Add timing header
+        response.headers["X-Process-Time"] = str(duration)
+        
+        return response
+
+
+class ErrorHandlingMiddleware(BaseHTTPMiddleware):
+    """Global error handling middleware."""
+    
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
         try:
             response = await call_next(request)
-            
-            # Calculate duration
-            duration = time.time() - start_time
-            
-            # Add request ID to response headers
-            response.headers["X-Request-ID"] = request_id
-            
-            # Log response
-            logger.info(
-                f"Request completed",
-                extra={
-                    "request_id": request_id,
-                    "status_code": response.status_code,
-                    "duration": duration
-                }
-            )
-            
             return response
             
+        except HTTPException as e:
+            # Let FastAPI handle HTTP exceptions
+            raise
+            
         except Exception as e:
-            duration = time.time() - start_time
+            # Log unexpected errors
             logger.error(
-                f"Request failed",
+                f"Unhandled error: {str(e)}",
+                exc_info=True,
                 extra={
-                    "request_id": request_id,
-                    "duration": duration,
-                    "error": str(e)
+                    "request_id": getattr(request.state, "request_id", None),
+                    "path": request.url.path
                 }
             )
-            raise
+            
+            # Return error response
+            return JSONResponse(
+                status_code=500,
+                content=ErrorResponse(
+                    status="error",
+                    message="Internal server error",
+                    errors=[
+                        ErrorDetail(
+                            code="INTERNAL_ERROR",
+                            message="An unexpected error occurred"
+                        )
+                    ],
+                    request_id=getattr(request.state, "request_id", None)
+                ).model_dump()
+            )
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """Simple rate limiting middleware using in-memory storage."""
+    """Simple rate limiting middleware."""
     
-    def __init__(self, app: ASGIApp):
+    def __init__(self, app: ASGIApp, calls: int = 100, period: int = 3600):
         super().__init__(app)
-        self.rate_limit_storage = {}
-        
+        self.calls = calls
+        self.period = period
+        self.clients = {}
+    
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        if not settings.RATE_LIMIT_ENABLED:
-            return await call_next(request)
-            
-        # Get client identifier (IP address)
-        client_id = request.client.host if request.client else "unknown"
-        
         # Skip rate limiting for health checks
-        if request.url.path in ["/health", "/api/status"]:
+        if request.url.path in ["/health", "/metrics"]:
             return await call_next(request)
         
-        # Check rate limit
-        current_time = time.time()
-        window_start = current_time - settings.RATE_LIMIT_WINDOW
+        # Get client identifier
+        client = request.client.host if request.client else "unknown"
         
         # Clean old entries
-        if client_id in self.rate_limit_storage:
-            self.rate_limit_storage[client_id] = [
-                timestamp for timestamp in self.rate_limit_storage[client_id]
-                if timestamp > window_start
-            ]
-        else:
-            self.rate_limit_storage[client_id] = []
+        now = time.time()
+        self.clients = {
+            k: v for k, v in self.clients.items()
+            if now - v["start"] < self.period
+        }
         
-        # Check if limit exceeded
-        request_count = len(self.rate_limit_storage[client_id])
-        
-        if request_count >= settings.RATE_LIMIT_REQUESTS:
-            logger.warning(
-                f"Rate limit exceeded",
-                extra={
-                    "client_id": client_id,
-                    "request_count": request_count
-                }
-            )
+        # Check rate limit
+        if client in self.clients:
+            client_data = self.clients[client]
+            if client_data["calls"] >= self.calls:
+                # Calculate reset time
+                reset_time = client_data["start"] + self.period
+                retry_after = int(reset_time - now)
+                
+                return JSONResponse(
+                    status_code=429,
+                    content=RateLimitResponse(
+                        status="error",
+                        message="Rate limit exceeded",
+                        rate_limit_info={
+                            "limit": self.calls,
+                            "remaining": 0,
+                            "reset_at": datetime.fromtimestamp(reset_time),
+                            "retry_after": retry_after
+                        }
+                    ).model_dump(),
+                    headers={
+                        "X-RateLimit-Limit": str(self.calls),
+                        "X-RateLimit-Remaining": "0",
+                        "X-RateLimit-Reset": str(int(reset_time)),
+                        "Retry-After": str(retry_after)
+                    }
+                )
             
-            return JSONResponse(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                content={
-                    "detail": "Rate limit exceeded",
-                    "retry_after": settings.RATE_LIMIT_WINDOW
-                },
-                headers={
-                    "Retry-After": str(settings.RATE_LIMIT_WINDOW),
-                    "X-RateLimit-Limit": str(settings.RATE_LIMIT_REQUESTS),
-                    "X-RateLimit-Remaining": "0",
-                    "X-RateLimit-Reset": str(int(window_start + settings.RATE_LIMIT_WINDOW))
-                }
-            )
+            client_data["calls"] += 1
+        else:
+            self.clients[client] = {
+                "calls": 1,
+                "start": now
+            }
         
-        # Record request
-        self.rate_limit_storage[client_id].append(current_time)
+        # Process request
+        response = await call_next(request)
         
         # Add rate limit headers
-        response = await call_next(request)
-        response.headers["X-RateLimit-Limit"] = str(settings.RATE_LIMIT_REQUESTS)
-        response.headers["X-RateLimit-Remaining"] = str(
-            settings.RATE_LIMIT_REQUESTS - request_count - 1
-        )
-        response.headers["X-RateLimit-Reset"] = str(
-            int(window_start + settings.RATE_LIMIT_WINDOW)
-        )
+        client_data = self.clients[client]
+        remaining = self.calls - client_data["calls"]
+        reset_time = client_data["start"] + self.period
+        
+        response.headers["X-RateLimit-Limit"] = str(self.calls)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        response.headers["X-RateLimit-Reset"] = str(int(reset_time))
         
         return response
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Add security headers to all responses."""
+    """Add security headers to responses."""
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         response = await call_next(request)
@@ -161,74 +206,120 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = "default-src 'self'"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        
-        # Content Security Policy (adjust as needed)
-        if not settings.DEBUG:
-            response.headers["Content-Security-Policy"] = (
-                "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-                "style-src 'self' 'unsafe-inline'; "
-                "img-src 'self' data: https:; "
-                "font-src 'self' data:; "
-                "connect-src 'self' wss: https:;"
-            )
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         
         return response
 
 
 class CompressionMiddleware(BaseHTTPMiddleware):
-    """Custom compression middleware with configurable settings."""
+    """Compress responses when beneficial."""
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # Check if client accepts compression
+        accept_encoding = request.headers.get("accept-encoding", "")
+        
         # Process request
         response = await call_next(request)
         
-        # Check if compression is appropriate
+        # Skip compression for small responses or already compressed
         if (
-            response.status_code < 200 or
-            response.status_code >= 300 or
-            "Content-Encoding" in response.headers or
-            int(response.headers.get("Content-Length", 0)) < 1000
+            response.headers.get("content-encoding") or
+            int(response.headers.get("content-length", 0)) < 1000
         ):
             return response
         
-        # Check Accept-Encoding header
-        accept_encoding = request.headers.get("Accept-Encoding", "")
-        if "gzip" not in accept_encoding:
-            return response
+        # Add compression header if supported
+        if "gzip" in accept_encoding:
+            response.headers["Content-Encoding"] = "gzip"
+        elif "br" in accept_encoding:
+            response.headers["Content-Encoding"] = "br"
         
-        # Compression is handled by GZipMiddleware
         return response
 
 
-class ErrorHandlingMiddleware(BaseHTTPMiddleware):
-    """Centralized error handling middleware."""
+def setup_middleware(app: FastAPI) -> None:
+    """Configure all middleware for the application."""
     
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        try:
-            return await call_next(request)
-            
-        except HTTPException:
-            # Let FastAPI handle HTTP exceptions
-            raise
-            
-        except Exception as e:
-            logger.error(
-                f"Unhandled exception in middleware",
-                extra={
-                    "request_id": getattr(request.state, "request_id", None),
-                    "path": request.url.path,
-                    "error": str(e)
-                },
-                exc_info=True
+    # CORS
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["X-Request-ID", "X-Process-Time", "X-RateLimit-*"]
+    )
+    
+    # Custom middleware (order matters - executed in reverse order)
+    app.add_middleware(CompressionMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RateLimitMiddleware, calls=settings.RATE_LIMIT_CALLS, period=settings.RATE_LIMIT_PERIOD)
+    app.add_middleware(ErrorHandlingMiddleware)
+    app.add_middleware(LoggingMiddleware)
+    app.add_middleware(RequestIDMiddleware)
+    
+    logger.info("Middleware configured successfully")
+
+
+# Exception handlers
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """Handle HTTP exceptions."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=ErrorResponse(
+            status="error",
+            message=exc.detail,
+            errors=[
+                ErrorDetail(
+                    code=f"HTTP_{exc.status_code}",
+                    message=exc.detail
+                )
+            ],
+            request_id=getattr(request.state, "request_id", None)
+        ).model_dump(),
+        headers=exc.headers
+    )
+
+
+async def validation_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Handle validation exceptions."""
+    errors = []
+    
+    # Parse validation errors
+    if hasattr(exc, "errors"):
+        for error in exc.errors():
+            errors.append(
+                ErrorDetail(
+                    code="VALIDATION_ERROR",
+                    message=error.get("msg", "Validation failed"),
+                    field=".".join(str(loc) for loc in error.get("loc", [])),
+                    details=error
+                )
             )
-            
-            # Return generic error response
-            return JSONResponse(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                content={
-                    "detail": "Internal server error",
-                    "request_id": getattr(request.state, "request_id", None)
-                }
+    else:
+        errors.append(
+            ErrorDetail(
+                code="VALIDATION_ERROR",
+                message=str(exc)
             )
+        )
+    
+    return JSONResponse(
+        status_code=422,
+        content=ErrorResponse(
+            status="error",
+            message="Validation failed",
+            errors=errors,
+            request_id=getattr(request.state, "request_id", None)
+        ).model_dump()
+    )
+
+
+def setup_exception_handlers(app: FastAPI) -> None:
+    """Configure exception handlers."""
+    app.add_exception_handler(HTTPException, http_exception_handler)
+    app.add_exception_handler(422, validation_exception_handler)
+    
+    logger.info("Exception handlers configured successfully")
