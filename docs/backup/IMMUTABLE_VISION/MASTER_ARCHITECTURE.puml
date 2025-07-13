@@ -1,0 +1,130 @@
+@startuml Certify_Studio_Master_Architecture
+
+!define RECTANGLE skinparam rectangle {
+    BackgroundColor #E1F5FF
+    BorderColor #0066CC
+    FontColor #0066CC
+}
+
+!define AGENT skinparam agent {
+    BackgroundColor #FFE6E6
+    BorderColor #CC0000
+}
+
+title Certify Studio - Complete Domain Abstraction Architecture
+
+package "User Input Layer" {
+    [Certification Exam Guide PDF] as ExamGuide
+    [Training Materials] as TrainingMats
+    [Reference Videos/Images] as RefMaterials
+}
+
+package "Domain Abstraction Layer (CORE INNOVATION)" #FFE6CC {
+    agent "Domain Extraction Agent" as DEA
+    agent "Topic Mapping Agent" as TMA
+    agent "Concept Hierarchy Agent" as CHA
+    
+    rectangle "Domain Hierarchy" as DH {
+        note right: Automatically extracted structure\n- Domains\n- Topics per domain\n- Concepts per topic\n- Complete hierarchy
+    }
+    
+    DEA --> TMA : Extracted domains
+    TMA --> CHA : Mapped topics
+    CHA --> DH : Complete hierarchy
+}
+
+package "Knowledge Integration Layer" {
+    agent "Multimodal RAG Agent" as MRA
+    agent "Visual Asset Extractor" as VAE
+    agent "Style Learning Agent" as SLA
+    database "Provider Icon Library" as PIL
+    
+    MRA --> KnowledgeBase : Integrated knowledge
+    VAE --> SLA : Extracted visuals
+    SLA --> StyleGuide : Learned styles
+}
+
+package "Animation Generation Layer (DUAL GENERATION)" #E6FFE6 {
+    agent "Main Flow Generator" as MFG
+    agent "Micro Animation Engine" as MAE
+    
+    note top of MFG: Generates domain-level\narchitectural overviews\n(5-10 min each)
+    note bottom of MAE: Generates concept-level\ndeep dive animations\n(1-3 min each)
+    
+    rectangle "Animation Hierarchy" as AH {
+        note right: For each domain:\n- 1 main flow\n- 5-10 topic animations\n- 20-50 micro animations
+    }
+    
+    MFG --> AH : Main flows
+    MAE --> AH : Micro animations
+}
+
+package "Quality Consensus Layer" {
+    agent "Technical Accuracy Critic" as TAC
+    agent "Visual Quality Critic" as VQC
+    agent "Pedagogical Critic" as PC
+    agent "Certification Alignment Critic" as CAC
+    
+    rectangle "Consensus Engine" as CE {
+        note right: All critics must agree\nbefore content is approved
+    }
+    
+    TAC --> CE
+    VQC --> CE
+    PC --> CE
+    CAC --> CE
+}
+
+package "Export Pipeline" {
+    [Video Renderer] as VR
+    [PowerPoint Generator] as PPT
+    [Interactive Web] as IW
+    [3D Scene Builder] as 3D
+}
+
+' Main flow connections
+ExamGuide --> DEA : PDF upload
+TrainingMats --> MRA : Knowledge extraction
+RefMaterials --> VAE : Visual extraction
+
+DH --> MFG : Domain structure
+DH --> MAE : Topic/concept structure
+KnowledgeBase --> MFG : Domain knowledge
+KnowledgeBase --> MAE : Concept details
+StyleGuide --> MFG : Visual standards
+StyleGuide --> MAE : Animation styles
+PIL --> MFG : Official icons
+PIL --> MAE : Service icons
+
+AH --> CE : Generated animations
+
+CE --> VR : Approved content
+CE --> PPT : Approved content
+CE --> IW : Approved content
+CE --> 3D : Approved content
+
+' Key principles annotations
+note left of ExamGuide
+**ZERO CONFIGURATION**
+User only uploads:
+- Exam guide
+- Training materials
+End note
+
+note right of AH
+**COMPLETE GENERATION**
+From 1 PDF generates:
+- 4-6 main flows
+- 20-30 topic animations  
+- 50-100 micro animations
+- 500+ interactive elements
+End note
+
+note bottom
+**CORE INNOVATION**: Domain Abstraction enables complete automation
+**KEY DIFFERENTIATOR**: Generates BOTH main flows AND micro-animations
+**QUALITY BAR**: Enterprise-grade with official provider standards
+**TIME**: Manual (6 months) → Automated (45 minutes)
+End note
+
+@enduml
