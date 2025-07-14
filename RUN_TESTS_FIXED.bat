@@ -1,7 +1,7 @@
 @echo off
 cls
 echo ============================================================
-echo Certify Studio - Comprehensive Test Suite
+echo Certify Studio - Test Suite After Fixes
 echo ============================================================
 echo.
 
@@ -14,6 +14,6 @@ uv run python run_tests_diagnostic.py
 
 echo.
 echo ============================================================
-echo Test run complete. Press any key to exit...
+echo Press any key to exit...
 echo ============================================================
 pause > nul

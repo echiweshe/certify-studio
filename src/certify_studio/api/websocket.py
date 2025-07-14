@@ -370,5 +370,5 @@ async def cleanup_stale_connections():
         await asyncio.sleep(300)
 
 
-# Start cleanup task when module loads
-asyncio.create_task(cleanup_stale_connections())
+# Cleanup task should be started by the application lifespan handler, not at import time
+# This function can be called from the FastAPI app's lifespan context

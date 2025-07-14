@@ -21,7 +21,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .config import get_settings
 from .api.main import api_router
 from .api.middleware import (
-    RequestLoggingMiddleware,
+    LoggingMiddleware,
     RateLimitMiddleware,
     SecurityHeadersMiddleware
 )
@@ -155,10 +155,23 @@ def create_application() -> FastAPI:
     app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RateLimitMiddleware)
-    app.add_middleware(RequestLoggingMiddleware)
+    app.add_middleware(LoggingMiddleware)
     
     # Include API routes
     app.include_router(api_router, prefix="/api")
+    
+    # Root endpoint
+    @app.get("/")
+    async def root():
+        """Root endpoint."""
+        return {
+            "name": "Certify Studio",
+            "version": "0.1.0",
+            "status": "operational",
+            "api": "/api/v1",
+            "docs": "/docs",
+            "health": "/health"
+        }
     
     # Serve static files in development
     if settings.DEBUG:

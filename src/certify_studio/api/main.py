@@ -24,6 +24,70 @@ from .schemas import HealthCheck
 
 logger = get_logger(__name__)
 
+# Create API router that combines all sub-routers
+from fastapi import APIRouter
+
+api_router = APIRouter(prefix="/v1")
+api_router.include_router(auth_router, prefix="/auth", tags=["authentication"])
+api_router.include_router(generation_router, prefix="/generation", tags=["content-generation"])
+api_router.include_router(domains_router, prefix="/domains", tags=["domain-extraction"])
+api_router.include_router(quality_router, prefix="/quality", tags=["quality-assurance"])
+api_router.include_router(export_router, prefix="/export", tags=["export"])
+
+# Add info endpoint to the api_router
+@api_router.get(
+    "/info",
+    tags=["general"],
+    summary="API information",
+    description="Get API version and capabilities"
+)
+async def api_info():
+    """Get API information."""
+    return {
+        "name": "Certify Studio API",
+        "version": "1.0.0",
+        "description": "AI-powered educational content generation",
+        "capabilities": [
+            "multimodal-content-generation",
+            "domain-knowledge-extraction",
+            "quality-assurance",
+            "multi-format-export",
+            "real-time-updates"
+        ],
+        "agents": [
+            {
+                "name": "Pedagogical Reasoning Agent",
+                "status": "operational",
+                "capabilities": ["cognitive-load-optimization", "learning-path-generation"]
+            },
+            {
+                "name": "Content Generation Agent",
+                "status": "operational",
+                "capabilities": ["animation-generation", "diagram-creation", "interactive-elements"]
+            },
+            {
+                "name": "Domain Extraction Agent",
+                "status": "operational",
+                "capabilities": ["concept-extraction", "relationship-mapping", "knowledge-graphs"]
+            },
+            {
+                "name": "Quality Assurance Agent",
+                "status": "operational",
+                "capabilities": ["technical-validation", "accessibility-checking", "continuous-monitoring"]
+            }
+        ],
+        "supported_formats": [
+            "video/mp4",
+            "video/webm",
+            "interactive/html",
+            "scorm/package",
+            "pdf/document",
+            "powerpoint/pptx"
+        ],
+        "api_version": "v1",
+        "documentation": "/api/docs"
+    }
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -44,12 +108,24 @@ async def lifespan(app: FastAPI):
     # redis = await get_redis()
     # await redis.ping()
     
+    # Start WebSocket cleanup task
+    import asyncio
+    from .websocket import cleanup_stale_connections
+    cleanup_task = asyncio.create_task(cleanup_stale_connections())
+    
     logger.info("API startup complete")
     
     yield
     
     # Shutdown
     logger.info("Shutting down Certify Studio API")
+    
+    # Cancel cleanup task
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
     
     # Close database connections
     # await close_db()
