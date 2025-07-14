@@ -29,16 +29,26 @@ from .style_manager import StyleManager, DomainStyle
 from .accessibility import AccessibilityManager, AccessibilityStandard
 from .quality_validator import QualityValidator
 
-from ....core.agents.base import AutonomousAgent
-from ....core.agents.types import (
+from ....agents.core.autonomous_agent import (
+    AutonomousAgent,
     AgentCapability,
     AgentState,
     AgentBelief,
     AgentGoal,
-    AgentPlan,
-    PlanStep
+    AgentPlan
 )
 from ....config import settings
+
+
+class PlanStep(BaseModel):
+    """A single step in a content generation plan."""
+    step_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    action: str
+    module: str
+    inputs: Dict[str, Any] = Field(default_factory=dict)
+    expected_output: str
+    duration_estimate: float = 0.0
+    dependencies: List[str] = Field(default_factory=list)
 
 
 class ContentGenerationGoal(BaseModel):
@@ -66,14 +76,14 @@ class ContentGenerationAgent(AutonomousAgent):
     
     def __init__(self):
         super().__init__(
+            agent_id=str(uuid.uuid4()),
             name="ContentGenerationAgent",
-            capabilities={
-                AgentCapability.MULTIMODAL_PROCESSING,
-                AgentCapability.CREATIVE_GENERATION,
-                AgentCapability.QUALITY_ASSURANCE,
+            capabilities=[
+                AgentCapability.GENERATION,
+                AgentCapability.EVALUATION,
                 AgentCapability.LEARNING,
                 AgentCapability.COLLABORATION
-            }
+            ]
         )
         
         # Initialize all modules
@@ -99,7 +109,7 @@ class ContentGenerationAgent(AutonomousAgent):
             
             # Update agent state
             self._current_request = request
-            self.state = AgentState.ACTIVE
+            self.state = AgentState.EXECUTING
             
             # Create goal
             goal = ContentGenerationGoal(
@@ -200,11 +210,13 @@ class ContentGenerationAgent(AutonomousAgent):
         # Step 1: Apply style
         steps.append(PlanStep(
             action="apply_style",
-            parameters={
+            module="style_manager",
+            inputs={
                 "domain": self._current_request.metadata.get("domain", "general"),
                 "style_guide": goal.style_guide
             },
-            expected_duration=5.0
+            expected_output="styled_content",
+            duration_estimate=5.0
         ))
         required_modules.append("style_manager")
         

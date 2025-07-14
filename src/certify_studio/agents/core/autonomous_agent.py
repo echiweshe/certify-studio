@@ -43,6 +43,19 @@ class AgentCapability(Enum):
     COLLABORATION = "collaboration"
     TEACHING = "teaching"
     OPTIMIZATION = "optimization"
+    # Domain extraction capabilities
+    DOMAIN_EXTRACTION = "domain_extraction"
+    KNOWLEDGE_GRAPH_BUILDING = "knowledge_graph_building"
+    CONCEPT_IDENTIFICATION = "concept_identification"
+    RELATIONSHIP_MAPPING = "relationship_mapping"
+    MULTIMODAL_UNDERSTANDING = "multimodal_understanding"
+    # Quality assurance capabilities
+    QUALITY_ASSESSMENT = "quality_assessment"
+    TECHNICAL_VALIDATION = "technical_validation"
+    PERFORMANCE_MONITORING = "performance_monitoring"
+    CONTINUOUS_IMPROVEMENT = "continuous_improvement"
+    REPORTING = "reporting"
+    CRITICAL_ANALYSIS = "critical_analysis"
 
 
 @dataclass

@@ -14,9 +14,9 @@ from certify_studio.agents.core.autonomous_agent import (
     AutonomousAgent,
     AgentCapability,
     AgentState,
-    Belief,
-    Goal,
-    Intention
+    AgentBelief as Belief,  # Alias to match expected name
+    AgentGoal as Goal,      # Alias to match expected name
+    AgentPlan as Intention  # Alias to match expected name
 )
 
 from .models import (

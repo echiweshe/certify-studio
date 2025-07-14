@@ -24,7 +24,7 @@ from .models import (
     DocumentChunk,
     Document
 )
-from ....core.llm import MultiModalLLM
+from ....core.llm import MultimodalLLM
 from ....config import settings
 
 
@@ -32,7 +32,7 @@ class ConceptExtractor:
     """Extract concepts from documentation."""
     
     def __init__(self):
-        self.llm = MultiModalLLM()
+        self.llm = MultimodalLLM()
         self._nlp = None
         self._tfidf_vectorizer = None
         

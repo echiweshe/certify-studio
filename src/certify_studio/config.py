@@ -10,7 +10,7 @@ from functools import lru_cache
 from typing import List, Optional, Union, Dict, Any
 from pathlib import Path
 
-from pydantic import Field, validator, SecretStr
+from pydantic import ConfigDict, Field, field_validator, SecretStr
 from pydantic_settings import BaseSettings
 
 
@@ -23,10 +23,10 @@ class Settings(BaseSettings):
     """
     
     # Application Basic Settings
-    APP_NAME: str = Field(default="Certify Studio", env="APP_NAME")
-    APP_VERSION: str = Field(default="0.1.0", env="APP_VERSION")
-    DEBUG: bool = Field(default=False, env="DEBUG")
-    ENVIRONMENT: str = Field(default="development", env="ENVIRONMENT")
+    APP_NAME: str = Field(default="Certify Studio")
+    APP_VERSION: str = Field(default="0.1.0")
+    DEBUG: bool = Field(default=False)
+    ENVIRONMENT: str = Field(default="development")
     
     # Server Configuration
     HOST: str = Field(default="0.0.0.0", env="HOST")
@@ -34,10 +34,12 @@ class Settings(BaseSettings):
     WORKERS: int = Field(default=4, env="WORKERS")
     
     # Security
-    SECRET_KEY: SecretStr = Field(..., env="SECRET_KEY")
-    JWT_SECRET_KEY: SecretStr = Field(..., env="JWT_SECRET_KEY")
-    ENCRYPTION_KEY: SecretStr = Field(..., env="ENCRYPTION_KEY")
+    SECRET_KEY: SecretStr = Field(default=SecretStr("dev-secret-key-change-this"), env="SECRET_KEY")
+    JWT_SECRET_KEY: SecretStr = Field(default=SecretStr("dev-jwt-secret-change-this"), env="JWT_SECRET_KEY")
     JWT_ALGORITHM: str = Field(default="HS256", env="JWT_ALGORITHM")
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, env="JWT_ACCESS_TOKEN_EXPIRE_MINUTES")
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=7, env="JWT_REFRESH_TOKEN_EXPIRE_DAYS")
+    ENCRYPTION_KEY: SecretStr = Field(default=SecretStr("dev-encryption-key"), env="ENCRYPTION_KEY")
     JWT_EXPIRE_MINUTES: int = Field(default=1440, env="JWT_EXPIRE_MINUTES")  # 24 hours
     
     # CORS Configuration
@@ -45,9 +47,10 @@ class Settings(BaseSettings):
         default=["http://localhost:3000", "http://localhost:8080"],
         env="CORS_ORIGINS"
     )
+    ALLOWED_HOSTS: List[str] = Field(default=[], env="ALLOWED_HOSTS")
     
     # Database Configuration
-    DATABASE_URL: str = Field(..., env="DATABASE_URL")
+    DATABASE_URL: str = Field(default="postgresql+asyncpg://postgres:postgres@localhost:5432/certify_studio", env="DATABASE_URL")
     DATABASE_POOL_SIZE: int = Field(default=20, env="DATABASE_POOL_SIZE")
     DATABASE_MAX_OVERFLOW: int = Field(default=30, env="DATABASE_MAX_OVERFLOW")
     DATABASE_ECHO: bool = Field(default=False, env="DATABASE_ECHO")
@@ -113,6 +116,15 @@ class Settings(BaseSettings):
     RATE_LIMIT_REQUESTS: int = Field(default=100, env="RATE_LIMIT_REQUESTS")
     RATE_LIMIT_WINDOW: int = Field(default=60, env="RATE_LIMIT_WINDOW")  # seconds
     RATE_LIMIT_ENABLED: bool = Field(default=True, env="RATE_LIMIT_ENABLED")
+    RATE_LIMITS: Dict[str, int] = Field(
+        default={
+            "free": 100,
+            "starter": 500,
+            "professional": 1000,
+            "enterprise": 10000
+        },
+        env="RATE_LIMITS"
+    )
     
     # WebSocket Configuration
     WS_MAX_CONNECTIONS: int = Field(default=1000, env="WS_MAX_CONNECTIONS")
@@ -154,7 +166,7 @@ class Settings(BaseSettings):
         
         # Settings source customization removed for compatibility
     
-    @validator("ENVIRONMENT")
+    @field_validator("ENVIRONMENT")
     def validate_environment(cls, v):
         """Validate environment setting."""
         valid_environments = ["development", "staging", "production", "testing"]
@@ -162,7 +174,7 @@ class Settings(BaseSettings):
             raise ValueError(f"Environment must be one of: {valid_environments}")
         return v
     
-    @validator("LOG_LEVEL")
+    @field_validator("LOG_LEVEL")
     def validate_log_level(cls, v):
         """Validate log level setting."""
         valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -170,7 +182,7 @@ class Settings(BaseSettings):
             raise ValueError(f"Log level must be one of: {valid_levels}")
         return v.upper()
     
-    @validator("STORAGE_BACKEND")
+    @field_validator("STORAGE_BACKEND")
     def validate_storage_backend(cls, v):
         """Validate storage backend setting."""
         valid_backends = ["local", "s3", "azure", "gcs"]
@@ -178,7 +190,7 @@ class Settings(BaseSettings):
             raise ValueError(f"Storage backend must be one of: {valid_backends}")
         return v
     
-    @validator("MANIM_QUALITY")
+    @field_validator("MANIM_QUALITY")
     def validate_manim_quality(cls, v):
         """Validate Manim quality setting."""
         valid_qualities = ["low", "medium", "high", "production"]
@@ -186,14 +198,21 @@ class Settings(BaseSettings):
             raise ValueError(f"Manim quality must be one of: {valid_qualities}")
         return v
     
-    @validator("CORS_ORIGINS", pre=True)
+    @field_validator("CORS_ORIGINS", mode="before")
     def parse_cors_origins(cls, v) -> List[str]:
         """Parse CORS origins from string or list."""
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",")]
         return v
     
-    @validator("EXPORT_FORMATS", pre=True)
+    @field_validator("ALLOWED_HOSTS", mode="before")
+    def parse_allowed_hosts(cls, v) -> List[str]:
+        """Parse allowed hosts from string or list."""
+        if isinstance(v, str):
+            return [host.strip() for host in v.split(",")]
+        return v
+    
+    @field_validator("EXPORT_FORMATS", mode="before")
     def parse_export_formats(cls, v) -> List[str]:
         """Parse export formats from string or list."""
         if isinstance(v, str):
@@ -296,8 +315,10 @@ class Settings(BaseSettings):
             errors.append("SECRET_KEY is required")
         if not self.JWT_SECRET_KEY:
             errors.append("JWT_SECRET_KEY is required")
-        if not self.DATABASE_URL:
-            errors.append("DATABASE_URL is required")
+        
+        # Database only required in production
+        if self.is_production and not self.DATABASE_URL:
+            errors.append("DATABASE_URL is required in production")
         
         # Production-specific requirements
         if self.is_production:

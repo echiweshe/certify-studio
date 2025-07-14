@@ -1,5 +1,5 @@
 """
-API schemas package.
+API schemas for request/response models.
 """
 
 from .common import (
@@ -7,20 +7,20 @@ from .common import (
     OutputFormat,
     CertificationType,
     QualityLevel,
-    BaseResponse,
-    ErrorResponse,
-    ErrorDetail,
+    UserRole,
+    PlanType,
+    GenerationPhase,
+    ExportOptions,
+    HealthCheck,
     PaginationParams,
     PaginatedResponse,
-    HealthCheck,
-    FileUpload,
+    ErrorDetail,
+    ErrorResponse,
     ProgressUpdate,
     User,
     TokenData,
-    GenerationMetrics,
-    ExportOptions,
-    WebSocketMessage,
-    RateLimitInfo
+    RateLimitInfo,
+    GenerationMetrics
 )
 
 from .requests import (
@@ -37,20 +37,20 @@ from .requests import (
 )
 
 from .responses import (
+    BaseResponse,
     GenerationResponse,
     DomainExtractionResponse,
     QualityCheckResponse,
-    ContentResponse,
-    ContentListResponse,
     ExportResponse,
-    FeedbackResponse,
-    BatchGenerationResponse,
+    ContentListResponse,
+    UserContentStats,
     AnalyticsResponse,
-    UserResponse,
-    AuthResponse,
-    RateLimitResponse,
-    WebSocketAuthResponse,
-    ProgressStreamResponse
+    AuthTokenResponse,
+    UploadResponse,
+    BatchGenerationResponse,
+    FeedbackResponse,
+    SystemInfoResponse,
+    WebSocketMessage
 )
 
 __all__ = [
@@ -59,20 +59,20 @@ __all__ = [
     "OutputFormat",
     "CertificationType",
     "QualityLevel",
-    "BaseResponse",
-    "ErrorResponse",
-    "ErrorDetail",
+    "UserRole",
+    "PlanType",
+    "GenerationPhase",
+    "ExportOptions",
+    "HealthCheck",
     "PaginationParams",
     "PaginatedResponse",
-    "HealthCheck",
-    "FileUpload",
+    "ErrorDetail",
+    "ErrorResponse",
     "ProgressUpdate",
     "User",
     "TokenData",
-    "GenerationMetrics",
-    "ExportOptions",
-    "WebSocketMessage",
     "RateLimitInfo",
+    "GenerationMetrics",
     
     # Requests
     "GenerationRequest",
@@ -87,18 +87,18 @@ __all__ = [
     "ContentSearchRequest",
     
     # Responses
+    "BaseResponse",
     "GenerationResponse",
     "DomainExtractionResponse",
     "QualityCheckResponse",
-    "ContentResponse",
-    "ContentListResponse",
     "ExportResponse",
-    "FeedbackResponse",
-    "BatchGenerationResponse",
+    "ContentListResponse",
+    "UserContentStats",
     "AnalyticsResponse",
-    "UserResponse",
-    "AuthResponse",
-    "RateLimitResponse",
-    "WebSocketAuthResponse",
-    "ProgressStreamResponse"
+    "AuthTokenResponse",
+    "UploadResponse",
+    "BatchGenerationResponse",
+    "FeedbackResponse",
+    "SystemInfoResponse",
+    "WebSocketMessage"
 ]

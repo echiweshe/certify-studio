@@ -10,9 +10,10 @@ from pathlib import Path
 import asyncio
 import json
 
-from langchain.chat_models import ChatAnthropic, ChatOpenAI
-from langchain.schema import BaseMessage, HumanMessage, SystemMessage, AIMessage
-from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, AIMessage
+from langchain_core.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 import anthropic
 import openai
 from PIL import Image
@@ -104,23 +105,23 @@ class MultimodalLLM:
         """Initialize LLM clients."""
         if self.provider in [LLMProvider.ANTHROPIC_CLAUDE, LLMProvider.ANTHROPIC_CLAUDE_VISION]:
             self.anthropic_client = anthropic.Anthropic(
-                api_key=settings.ANTHROPIC_API_KEY
+                api_key=settings.ANTHROPIC_API_KEY.get_secret_value() if settings.ANTHROPIC_API_KEY else None
             )
             self.langchain_model = ChatAnthropic(
                 model=self.model_name,
                 temperature=self.temperature,
                 max_tokens=self.max_tokens,
-                anthropic_api_key=settings.ANTHROPIC_API_KEY
+                api_key=settings.ANTHROPIC_API_KEY.get_secret_value() if settings.ANTHROPIC_API_KEY else None
             )
         elif self.provider in [LLMProvider.OPENAI_GPT4, LLMProvider.OPENAI_GPT4_VISION]:
             self.openai_client = openai.OpenAI(
-                api_key=settings.OPENAI_API_KEY
+                api_key=settings.OPENAI_API_KEY.get_secret_value() if settings.OPENAI_API_KEY else None
             )
             self.langchain_model = ChatOpenAI(
                 model=self.model_name,
                 temperature=self.temperature,
                 max_tokens=self.max_tokens,
-                openai_api_key=settings.OPENAI_API_KEY
+                api_key=settings.OPENAI_API_KEY.get_secret_value() if settings.OPENAI_API_KEY else None
             )
     
     async def generate(

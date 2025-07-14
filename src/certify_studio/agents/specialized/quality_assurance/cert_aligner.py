@@ -22,8 +22,9 @@ from .models import (
     SeverityLevel,
     QualityDimension
 )
-from ....core.llm import LLMClient
-from ....core.config import Config
+from ....core.llm import MultimodalLLM
+from ....core.llm.multimodal_llm import MultimodalMessage
+from ....core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +32,9 @@ logger = logging.getLogger(__name__)
 class CertificationAligner:
     """Validates content alignment with certification requirements."""
     
-    def __init__(self, config: Config):
+    def __init__(self, llm: Optional[MultimodalLLM] = None):
         """Initialize the certification aligner."""
-        self.config = config
-        self.llm_client = LLMClient(config)
+        self.llm = llm or MultimodalLLM()
         self.certification_database = self._load_certification_database()
         self.objective_mappings = {}
         

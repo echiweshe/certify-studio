@@ -1,93 +1,291 @@
 # Certify Studio Documentation
 
-Welcome to the Certify Studio documentation. This platform represents a revolutionary approach to technical education, combining AI-powered content generation with enterprise-grade animation capabilities.
+## Project Structure
 
-## 📚 Documentation Structure
+```
+certify-studio/
+├── src/certify_studio/      # Main source code
+│   ├── agents/              # AI agents (core, specialized)
+│   ├── api/                 # FastAPI application
+│   ├── core/                # Core utilities
+│   ├── database/            # Database models and repositories
+│   ├── knowledge/           # Unified GraphRAG system
+│   └── integrations/        # External service integrations
+├── tests/                   # Comprehensive test suite
+│   ├── unit/               # Unit tests
+│   ├── integration/        # Integration tests
+│   ├── e2e/                # End-to-end tests
+│   └── fixtures/           # Test data
+├── scripts/                 # Development and utility scripts
+│   ├── setup.py            # Initial setup script
+│   ├── run_tests.py        # Test runner
+│   └── dev.py              # Development utilities
+├── examples/                # Usage examples
+│   └── api_usage.py        # API client example
+├── docs/                    # Documentation
+│   ├── IMMUTABLE_VISION/   # Core vision (never modify)
+│   ├── CONTINUATION.md     # Development progress
+│   └── architecture/       # Architecture diagrams
+└── deployments/            # Deployment configurations
+    ├── docker/             # Docker files
+    └── kubernetes/         # K8s manifests
+```
 
-### 1. [Vision & Mission](./VISION.md)
-Our vision for revolutionizing technical certification education through AI and automation.
+## Quick Start
 
-### 2. [Architecture Overview](./architecture/README.md)
-- [System Architecture](./architecture/system-design.md)
-- [AI Agent Architecture](./architecture/ai-agents.md)
-- [Manim Extensions](./architecture/manim-extensions.md)
-- [Database Design](./architecture/database-design.md)
-- [API Design](./architecture/api-design.md)
+### 1. Setup Environment
 
-### 3. [Development](./development/README.md)
-- [Getting Started](./development/getting-started.md)
-- [Development Setup](./development/setup.md)
-- [Contributing Guidelines](./development/contributing.md)
-- [Code Standards](./development/code-standards.md)
+```bash
+# Clone repository
+git clone https://github.com/certify-studio/certify-studio.git
+cd certify-studio
 
-### 4. [Continuation Strategy](./CONTINUATION.md)
-Detailed implementation roadmap and priorities for Claude or other AI assistants continuing the development.
+# Install uv (fast Python package manager)
+# Windows PowerShell:
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 
-### 5. [User Guide](./user-guide/README.md)
-- [Platform Overview](./user-guide/overview.md)
-- [Uploading Exam Guides](./user-guide/exam-guides.md)
-- [Content Generation](./user-guide/content-generation.md)
-- [Export Options](./user-guide/exports.md)
+# Create virtual environment
+uv venv
 
-### 6. [API Documentation](./api/README.md)
-- [API Overview](./api/overview.md)
-- [Authentication](./api/authentication.md)
-- [Endpoints Reference](./api/endpoints.md)
-- [WebSocket Events](./api/websockets.md)
+# Activate (Windows)
+.venv\Scripts\activate
 
-### 7. [Deployment](./deployment/README.md)
-- [Docker Deployment](./deployment/docker.md)
-- [Kubernetes Deployment](./deployment/kubernetes.md)
-- [Cloud Deployment Guides](./deployment/cloud.md)
+# Install dependencies
+uv pip install -e ".[dev]"
+```
 
-## 🚀 Quick Links
+### 2. Configure Environment
 
-- **Getting Started**: [Quick Start Guide](../QUICK_START.md)
-- **Project Structure**: [Structure Overview](../PROJECT_STRUCTURE.md)
-- **Contributing**: [How to Contribute](./development/contributing.md)
-- **API Docs**: http://localhost:8000/docs (when running)
+```bash
+# Copy environment template
+cp .env.example .env
 
-## 🎯 Key Features
+# Edit with your settings (especially API keys)
+notepad .env  # or your preferred editor
+```
 
-1. **AI-Powered Generation**: Multi-agent system for intelligent content creation
-2. **Enterprise Animations**: Enhanced Manim framework with cloud provider themes
-3. **Multi-Cloud Support**: AWS, Azure, GCP, and Kubernetes certifications
-4. **Quality Assurance**: Consensus-based validation across multiple AI agents
-5. **Accessibility**: WCAG 2.1 AA compliant with full keyboard and screen reader support
-6. **Multi-Format Export**: Video, PowerPoint, Interactive Web, and Blender 3D
+### 3. Run Setup
 
-## 🛠️ Technology Stack
+```bash
+# Run setup script
+python scripts/setup.py
 
-- **Backend**: FastAPI, Python 3.11+, SQLAlchemy, Celery
-- **AI/ML**: LangChain, AWS Bedrock, OpenAI, Anthropic
-- **Animation**: Manim (enhanced), Python Diagrams, SVG
-- **Frontend**: React, TypeScript, Tailwind CSS
-- **Infrastructure**: Docker, Kubernetes, PostgreSQL, Redis
+# Install spaCy model
+python -m spacy download en_core_web_sm
+```
 
-## 📖 Reading Order
+### 4. Start API Server
 
-For new developers:
-1. Start with [Vision & Mission](./VISION.md)
-2. Read the [Architecture Overview](./architecture/README.md)
-3. Follow [Getting Started](./development/getting-started.md)
-4. Review [Continuation Strategy](./CONTINUATION.md)
+```bash
+# Development mode with auto-reload
+python scripts/dev.py api
 
-For contributors:
-1. Read [Contributing Guidelines](./development/contributing.md)
-2. Review [Code Standards](./development/code-standards.md)
-3. Check [API Design](./architecture/api-design.md)
+# Or directly with uvicorn
+cd src
+uvicorn certify_studio.api.main:app --reload
+```
 
-## 💡 Design Philosophy
+### 5. Access API
 
-Certify Studio is built on these core principles:
+- **API Documentation**: http://localhost:8000/api/docs
+- **Health Check**: http://localhost:8000/health
+- **Metrics**: http://localhost:8000/metrics
 
-1. **Education First**: Every feature must enhance learning outcomes
-2. **Enterprise Grade**: Production-ready code with no shortcuts
-3. **Accessibility**: Inclusive design for all learners
-4. **Extensibility**: Modular architecture for easy expansion
-5. **Quality**: Multi-agent validation ensures accuracy
-6. **Innovation**: Pushing boundaries of educational technology
+## Development Workflow
 
----
+### Running Tests
 
-For questions or support, please open an issue on GitHub or contact the development team.
+```bash
+# Run all tests
+python scripts/run_tests.py
+
+# Run specific test types
+python scripts/run_tests.py --unit
+python scripts/run_tests.py --integration
+python scripts/run_tests.py --e2e
+
+# Run with coverage
+pytest --cov=certify_studio --cov-report=html
+```
+
+### Code Quality
+
+```bash
+# Format code
+python scripts/dev.py format
+
+# Run linting
+python scripts/dev.py lint
+
+# Type checking
+python scripts/dev.py type-check
+
+# Run all checks
+python scripts/dev.py check-all
+```
+
+### Using the API
+
+See `examples/api_usage.py` for a complete example:
+
+```python
+from examples.api_usage import CertifyStudioClient
+
+async with CertifyStudioClient() as client:
+    # Login
+    await client.login("user@example.com", "password")
+    
+    # Upload content
+    result = await client.upload_file("guide.pdf")
+    
+    # Generate course
+    generation = await client.generate_content(
+        upload_id=result["upload_id"],
+        title="My Course",
+        cert_type="aws-saa"
+    )
+```
+
+## Architecture Overview
+
+### Core Components
+
+1. **Multimodal Orchestrator**
+   - Coordinates all agents
+   - Manages generation workflow
+   - Handles progress tracking
+
+2. **Specialized Agents**
+   - **Pedagogical Reasoning**: Learning path optimization
+   - **Content Generation**: Creates animations, diagrams
+   - **Domain Extraction**: Extracts concepts and relationships
+   - **Quality Assurance**: Validates content quality
+
+3. **Unified GraphRAG**
+   - Neo4j-based knowledge graph
+   - Vector search capabilities
+   - Integrated educational + troubleshooting
+
+4. **API Layer**
+   - RESTful endpoints
+   - WebSocket for real-time updates
+   - JWT authentication
+   - Rate limiting
+
+### Key Features
+
+- 🤖 **4 Specialized AI Agents** with BDI architecture
+- 📚 **Multimodal Content** (video, interactive, PDF)
+- 🧠 **Cognitive Load Optimization**
+- ♿ **WCAG AA Accessibility**
+- 📊 **Real-time Quality Monitoring**
+- 🔄 **Unified Knowledge System**
+
+## API Endpoints
+
+### Authentication
+- `POST /api/auth/login` - User login
+- `POST /api/auth/register` - Create account
+- `GET /api/auth/me` - Get current user
+
+### Content Generation
+- `POST /api/generation/upload` - Upload content
+- `POST /api/generation/generate` - Start generation
+- `GET /api/generation/status/{task_id}` - Check progress
+
+### Domain Extraction
+- `POST /api/domains/extract` - Extract knowledge
+- `GET /api/domains/graph/{id}` - Get knowledge graph
+- `POST /api/domains/search` - Search concepts
+
+### Quality Assurance
+- `POST /api/quality/check` - Run quality checks
+- `POST /api/quality/feedback` - Submit feedback
+- `GET /api/quality/benchmarks/{type}` - Get benchmarks
+
+### Export
+- `POST /api/export/` - Export content
+- `GET /api/export/{id}/download` - Download export
+- `GET /api/export/formats` - Available formats
+
+## Configuration
+
+### Required Environment Variables
+
+```env
+# Security
+SECRET_KEY=your-secret-key
+JWT_SECRET_KEY=your-jwt-secret
+
+# Database
+DATABASE_URL=postgresql+asyncpg://user:pass@localhost/certify_studio
+
+# AI Services
+OPENAI_API_KEY=your-openai-key
+
+# Optional: Neo4j for GraphRAG
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=password
+```
+
+### Optional Services
+
+- **Redis**: For caching and rate limiting
+- **Neo4j**: For GraphRAG knowledge system
+- **PostgreSQL**: For persistent storage
+
+## Deployment
+
+### Docker
+
+```bash
+# Build image
+docker build -t certify-studio .
+
+# Run container
+docker run -p 8000:8000 --env-file .env certify-studio
+```
+
+### Kubernetes
+
+See `deployments/kubernetes/` for manifests.
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Import errors**
+   ```bash
+   # Ensure virtual environment is activated
+   # Reinstall in development mode
+   uv pip install -e .
+   ```
+
+2. **Neo4j connection failed**
+   - Neo4j is optional for initial testing
+   - Install from https://neo4j.com/download/
+   - Or use Docker: `docker run -p 7474:7474 -p 7687:7687 neo4j`
+
+3. **Missing spaCy model**
+   ```bash
+   python -m spacy download en_core_web_sm
+   ```
+
+## Contributing
+
+1. Follow the architecture in `docs/IMMUTABLE_VISION/`
+2. Write tests for all new features
+3. Maintain >80% test coverage
+4. Use type hints throughout
+5. Follow the commit conventions
+
+## License
+
+[License information here]
+
+## Support
+
+- Documentation: See `/docs` directory
+- Issues: GitHub Issues
+- Discussions: GitHub Discussions

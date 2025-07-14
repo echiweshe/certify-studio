@@ -1,206 +1,147 @@
 """
-Response schemas for the API endpoints.
+Response schemas for API endpoints.
 """
 
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field, ConfigDict, HttpUrl
+from pydantic import BaseModel, Field, ConfigDict
 
 from .common import (
-    BaseResponse,
     StatusEnum,
     OutputFormat,
-    PaginatedResponse,
+    GenerationPhase,
     GenerationMetrics,
-    RateLimitInfo
+    PaginatedResponse,
+    ProgressUpdate
 )
 
 
-class GenerationResponse(BaseResponse):
-    """Response for content generation request."""
+class BaseResponse(BaseModel):
+    """Base response model."""
     model_config = ConfigDict(from_attributes=True)
     
-    task_id: UUID = Field(..., description="Task ID for tracking")
-    content_id: Optional[UUID] = Field(None, description="Generated content ID")
+    status: StatusEnum = Field(..., description="Operation status")
+    message: str = Field(..., description="Response message")
+    request_id: UUID = Field(..., description="Request tracking ID")
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class GenerationResponse(BaseResponse):
+    """Response for content generation requests."""
+    model_config = ConfigDict(from_attributes=True)
     
-    # Status
+    task_id: UUID = Field(..., description="Generation task ID")
     generation_status: StatusEnum = Field(..., description="Generation status")
     progress: float = Field(0, ge=0, le=100, description="Progress percentage")
-    current_phase: Optional[str] = Field(None, description="Current processing phase")
-    
-    # Results (when completed)
-    download_urls: Optional[Dict[OutputFormat, HttpUrl]] = Field(None, description="Download URLs by format")
-    preview_url: Optional[HttpUrl] = Field(None, description="Preview URL")
-    metrics: Optional[GenerationMetrics] = Field(None, description="Generation metrics")
+    current_phase: Optional[GenerationPhase] = Field(None, description="Current generation phase")
     
     # Timing
-    started_at: Optional[datetime] = Field(None)
-    completed_at: Optional[datetime] = Field(None)
-    estimated_completion: Optional[datetime] = Field(None)
+    started_at: datetime = Field(..., description="Generation start time")
+    completed_at: Optional[datetime] = Field(None, description="Generation completion time")
+    estimated_completion: Optional[datetime] = Field(None, description="Estimated completion time")
+    
+    # Results (when completed)
+    download_urls: Optional[Dict[str, str]] = Field(None, description="Download URLs by format")
+    preview_url: Optional[str] = Field(None, description="Preview URL")
+    metrics: Optional[GenerationMetrics] = Field(None, description="Generation metrics")
 
 
 class DomainExtractionResponse(BaseResponse):
-    """Response for domain extraction request."""
+    """Response for domain extraction requests."""
     model_config = ConfigDict(from_attributes=True)
     
     extraction_id: UUID = Field(..., description="Extraction task ID")
     
-    # Extracted data
+    # Results
     total_concepts: int = Field(..., description="Total concepts extracted")
     total_relationships: int = Field(..., description="Total relationships found")
-    total_domains: int = Field(..., description="Total exam domains identified")
+    total_prerequisites: int = Field(..., description="Total prerequisites identified")
     
-    # Domain breakdown
+    # Domain structure
     domains: List[Dict[str, Any]] = Field(..., description="Extracted domains with weights")
-    concepts: List[Dict[str, Any]] = Field(..., description="Extracted concepts")
-    prerequisites: List[Dict[str, Any]] = Field(..., description="Prerequisite relationships")
-    learning_paths: Optional[List[Dict[str, Any]]] = Field(None, description="Generated learning paths")
+    concept_graph: Optional[Dict[str, Any]] = Field(None, description="Concept relationship graph")
+    learning_paths: Optional[List[Dict[str, Any]]] = Field(None, description="Suggested learning paths")
     
-    # Knowledge graph
-    knowledge_graph_url: Optional[HttpUrl] = Field(None, description="Interactive knowledge graph URL")
-    graph_data: Optional[Dict[str, Any]] = Field(None, description="Raw graph data")
-    
-    # Quality metrics
-    extraction_confidence: float = Field(..., ge=0, le=1, description="Overall extraction confidence")
-    coverage_score: float = Field(..., ge=0, le=1, description="Content coverage score")
+    # Confidence metrics
+    overall_confidence: float = Field(..., ge=0, le=1, description="Overall extraction confidence")
+    domain_confidences: Dict[str, float] = Field(..., description="Confidence by domain")
 
 
 class QualityCheckResponse(BaseResponse):
-    """Response for quality check request."""
+    """Response for quality check requests."""
     model_config = ConfigDict(from_attributes=True)
     
     check_id: UUID = Field(..., description="Quality check ID")
-    content_id: UUID = Field(..., description="Content ID checked")
+    content_id: UUID = Field(..., description="Content ID that was checked")
     
     # Overall scores
-    overall_quality_score: float = Field(..., ge=0, le=1, description="Overall quality score")
-    passed_quality_threshold: bool = Field(..., description="Whether content passed quality threshold")
+    overall_quality: float = Field(..., ge=0, le=1, description="Overall quality score")
+    passed: bool = Field(..., description="Whether content passed quality checks")
     
     # Detailed scores
-    technical_accuracy_score: Optional[float] = Field(None, ge=0, le=1)
-    pedagogical_effectiveness_score: Optional[float] = Field(None, ge=0, le=1)
-    accessibility_score: Optional[float] = Field(None, ge=0, le=1)
-    certification_alignment_score: Optional[float] = Field(None, ge=0, le=1)
+    technical_accuracy: float = Field(..., ge=0, le=1, description="Technical accuracy score")
+    pedagogical_effectiveness: float = Field(..., ge=0, le=1, description="Teaching effectiveness")
+    accessibility_compliance: float = Field(..., ge=0, le=1, description="Accessibility score")
+    certification_alignment: float = Field(..., ge=0, le=1, description="Exam alignment score")
     
-    # Issues and recommendations
-    issues_found: List[Dict[str, Any]] = Field(..., description="List of issues found")
-    recommendations: List[str] = Field(..., description="Improvement recommendations")
+    # Issues found
+    issues: List[Dict[str, Any]] = Field(default_factory=list, description="Quality issues found")
+    recommendations: List[str] = Field(default_factory=list, description="Improvement recommendations")
     
-    # Detailed reports
-    technical_report: Optional[Dict[str, Any]] = Field(None)
-    pedagogical_report: Optional[Dict[str, Any]] = Field(None)
-    accessibility_report: Optional[Dict[str, Any]] = Field(None)
-    alignment_report: Optional[Dict[str, Any]] = Field(None)
-    
-    # Monitoring
-    monitoring_enabled: bool = Field(..., description="Whether monitoring is active")
-    monitoring_id: Optional[UUID] = Field(None, description="Monitoring task ID")
+    # Benchmarks
+    benchmark_comparison: Optional[Dict[str, Any]] = Field(None, description="Industry benchmark comparison")
 
 
-class ContentResponse(BaseResponse):
-    """Response with content details."""
+class ExportResponse(BaseResponse):
+    """Response for export requests."""
     model_config = ConfigDict(from_attributes=True)
     
-    content_id: UUID = Field(..., description="Content ID")
-    title: str = Field(..., description="Content title")
-    description: Optional[str] = Field(None, description="Content description")
+    export_id: UUID = Field(..., description="Export task ID")
+    content_id: UUID = Field(..., description="Content ID being exported")
     
-    # Metadata
-    certification_type: str = Field(..., description="Certification type")
-    created_at: datetime = Field(..., description="Creation timestamp")
-    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
-    created_by: UUID = Field(..., description="Creator user ID")
+    # Export details
+    format: OutputFormat = Field(..., description="Export format")
+    export_status: StatusEnum = Field(..., description="Export status")
     
-    # Status
-    status: StatusEnum = Field(..., description="Content status")
-    quality_score: float = Field(..., ge=0, le=1, description="Quality score")
+    # Results (when completed)
+    download_url: Optional[str] = Field(None, description="Download URL")
+    file_size_bytes: Optional[int] = Field(None, description="File size in bytes")
+    expires_at: Optional[datetime] = Field(None, description="Download expiration time")
     
-    # Content details
-    duration_minutes: int = Field(..., description="Content duration")
-    total_concepts: int = Field(..., description="Number of concepts covered")
-    difficulty_level: str = Field(..., description="Difficulty level")
-    
-    # Available formats
-    available_formats: List[OutputFormat] = Field(..., description="Available export formats")
-    download_urls: Dict[OutputFormat, HttpUrl] = Field(..., description="Download URLs")
-    preview_url: Optional[HttpUrl] = Field(None, description="Preview URL")
-    
-    # Metrics
-    metrics: GenerationMetrics = Field(..., description="Content metrics")
-    usage_stats: Optional[Dict[str, Any]] = Field(None, description="Usage statistics")
+    # Export metadata
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Format-specific metadata")
 
 
 class ContentListResponse(PaginatedResponse):
     """Response for content listing."""
     model_config = ConfigDict(from_attributes=True)
     
-    contents: List[ContentResponse] = Field(..., description="List of contents")
+    items: List[Dict[str, Any]] = Field(..., description="List of content items")
 
 
-class ExportResponse(BaseResponse):
-    """Response for export request."""
+class UserContentStats(BaseModel):
+    """User content statistics."""
     model_config = ConfigDict(from_attributes=True)
     
-    export_id: UUID = Field(..., description="Export task ID")
-    content_id: UUID = Field(..., description="Content being exported")
+    total_content_generated: int = Field(..., description="Total content pieces generated")
+    total_export_count: int = Field(..., description="Total exports performed")
+    average_quality_score: float = Field(..., description="Average quality score")
+    total_concepts_covered: int = Field(..., description="Total unique concepts covered")
+    most_used_certification: Optional[str] = Field(None, description="Most frequently used cert type")
     
-    # Status
-    export_status: StatusEnum = Field(..., description="Export status")
-    progress: float = Field(0, ge=0, le=100, description="Export progress")
+    # Time-based stats
+    content_this_month: int = Field(..., description="Content generated this month")
+    content_this_week: int = Field(..., description="Content generated this week")
     
-    # Results (when completed)
-    download_url: Optional[HttpUrl] = Field(None, description="Download URL")
-    file_size_bytes: Optional[int] = Field(None, description="File size")
-    expires_at: Optional[datetime] = Field(None, description="Download expiration")
-    
-    # Timing
-    started_at: Optional[datetime] = Field(None)
-    completed_at: Optional[datetime] = Field(None)
-    estimated_completion: Optional[datetime] = Field(None)
-
-
-class FeedbackResponse(BaseResponse):
-    """Response for feedback submission."""
-    model_config = ConfigDict(from_attributes=True)
-    
-    feedback_id: UUID = Field(..., description="Feedback ID")
-    content_id: UUID = Field(..., description="Content ID")
-    
-    # Analysis results
-    sentiment_score: float = Field(..., ge=-1, le=1, description="Sentiment score")
-    key_themes: List[str] = Field(..., description="Identified themes")
-    suggested_improvements: List[str] = Field(..., description="Suggested improvements")
-    
-    # Impact
-    will_trigger_update: bool = Field(..., description="Whether this will trigger content update")
-    priority_level: str = Field(..., description="Feedback priority level")
-
-
-class BatchGenerationResponse(BaseResponse):
-    """Response for batch generation request."""
-    model_config = ConfigDict(from_attributes=True)
-    
-    batch_id: UUID = Field(..., description="Batch ID")
-    total_requests: int = Field(..., description="Total requests in batch")
-    
-    # Status
-    batch_status: StatusEnum = Field(..., description="Overall batch status")
-    completed_count: int = Field(0, description="Completed requests")
-    failed_count: int = Field(0, description="Failed requests")
-    
-    # Individual results
-    results: List[GenerationResponse] = Field(..., description="Individual generation results")
-    
-    # Timing
-    started_at: Optional[datetime] = Field(None)
-    completed_at: Optional[datetime] = Field(None)
-    estimated_completion: Optional[datetime] = Field(None)
+    # Storage
+    total_storage_used_mb: float = Field(..., description="Total storage used in MB")
+    storage_limit_mb: float = Field(..., description="Storage limit in MB")
 
 
 class AnalyticsResponse(BaseResponse):
-    """Response for analytics request."""
+    """Response for analytics requests."""
     model_config = ConfigDict(from_attributes=True)
     
     # Time range
@@ -208,85 +149,131 @@ class AnalyticsResponse(BaseResponse):
     end_date: datetime = Field(..., description="Analytics end date")
     
     # Usage metrics
-    total_generations: Optional[int] = Field(None)
-    total_users: Optional[int] = Field(None)
-    total_content_minutes: Optional[float] = Field(None)
+    total_generations: int = Field(..., description="Total generations in period")
+    unique_users: int = Field(..., description="Unique active users")
+    average_generation_time: float = Field(..., description="Average generation time in seconds")
     
     # Quality metrics
-    average_quality_score: Optional[float] = Field(None, ge=0, le=1)
-    quality_trend: Optional[List[Dict[str, Any]]] = Field(None)
+    average_quality_score: float = Field(..., description="Average quality score")
+    quality_score_trend: List[Dict[str, Any]] = Field(..., description="Quality score over time")
     
     # Performance metrics
-    average_generation_time: Optional[float] = Field(None)
-    success_rate: Optional[float] = Field(None, ge=0, le=1)
+    success_rate: float = Field(..., description="Generation success rate")
+    average_processing_time: float = Field(..., description="Average processing time")
+    peak_usage_times: List[Dict[str, Any]] = Field(..., description="Peak usage periods")
+    
+    # Content metrics
+    popular_certifications: List[Dict[str, Any]] = Field(..., description="Most popular certifications")
+    output_format_distribution: Dict[str, int] = Field(..., description="Output format usage")
     
     # User feedback
-    average_rating: Optional[float] = Field(None, ge=1, le=5)
-    feedback_summary: Optional[Dict[str, Any]] = Field(None)
-    
-    # Detailed data
-    time_series_data: Optional[List[Dict[str, Any]]] = Field(None)
-    breakdown_by_type: Optional[Dict[str, Any]] = Field(None)
+    average_user_rating: Optional[float] = Field(None, description="Average user rating")
+    feedback_summary: Optional[Dict[str, Any]] = Field(None, description="Feedback summary")
 
 
-class UserResponse(BaseResponse):
-    """Response with user information."""
-    model_config = ConfigDict(from_attributes=True)
-    
-    user_id: UUID = Field(..., description="User ID")
-    email: str = Field(..., description="User email")
-    username: str = Field(..., description="Username")
-    
-    # Account status
-    is_active: bool = Field(..., description="Account active status")
-    is_verified: bool = Field(..., description="Email verification status")
-    
-    # Timestamps
-    created_at: datetime = Field(..., description="Account creation date")
-    last_login: Optional[datetime] = Field(None, description="Last login timestamp")
-    
-    # Usage stats
-    total_generations: int = Field(..., description="Total content generations")
-    total_storage_bytes: int = Field(..., description="Total storage used")
-    
-    # Preferences
-    preferences: Dict[str, Any] = Field(..., description="User preferences")
-    
-    # Subscription/quota
-    plan_type: str = Field(..., description="Subscription plan")
-    quota_remaining: Dict[str, int] = Field(..., description="Remaining quotas")
-
-
-class AuthResponse(BaseResponse):
-    """Response for authentication requests."""
+class AuthTokenResponse(BaseModel):
+    """Authentication token response."""
     model_config = ConfigDict(from_attributes=True)
     
     access_token: str = Field(..., description="JWT access token")
     refresh_token: str = Field(..., description="JWT refresh token")
     token_type: str = Field("bearer", description="Token type")
-    expires_in: int = Field(..., description="Token expiration in seconds")
+    expires_in: int = Field(..., description="Access token expiry in seconds")
     
     # User info
-    user: UserResponse = Field(..., description="Authenticated user information")
+    user_id: UUID = Field(..., description="Authenticated user ID")
+    email: str = Field(..., description="User email")
+    plan_type: str = Field(..., description="User's subscription plan")
 
 
-class RateLimitResponse(BaseResponse):
-    """Response when rate limited."""
-    status: StatusEnum = StatusEnum.ERROR
-    message: str = "Rate limit exceeded"
-    rate_limit_info: RateLimitInfo = Field(..., description="Rate limit details")
+class UploadResponse(BaseResponse):
+    """Response for file upload."""
+    model_config = ConfigDict(from_attributes=True)
+    
+    upload_id: UUID = Field(..., description="Upload ID for reference")
+    filename: str = Field(..., description="Original filename")
+    content_type: str = Field(..., description="File MIME type")
+    size_bytes: int = Field(..., description="File size in bytes")
+    
+    # Processing info
+    processing_status: StatusEnum = Field(StatusEnum.PENDING, description="Processing status")
+    extracted_metadata: Optional[Dict[str, Any]] = Field(None, description="Extracted file metadata")
 
 
-class WebSocketAuthResponse(BaseModel):
-    """WebSocket authentication response."""
-    authenticated: bool = Field(..., description="Authentication status")
-    connection_id: UUID = Field(..., description="WebSocket connection ID")
-    expires_at: datetime = Field(..., description="Connection expiration")
+class BatchGenerationResponse(BaseResponse):
+    """Response for batch generation requests."""
+    model_config = ConfigDict(from_attributes=True)
+    
+    batch_id: UUID = Field(..., description="Batch operation ID")
+    total_requests: int = Field(..., description="Total requests in batch")
+    
+    # Status tracking
+    completed_count: int = Field(0, description="Completed generations")
+    failed_count: int = Field(0, description="Failed generations")
+    pending_count: int = Field(..., description="Pending generations")
+    
+    # Individual results
+    results: List[Dict[str, Any]] = Field(default_factory=list, description="Individual generation results")
+    
+    # Timing
+    batch_started_at: datetime = Field(..., description="Batch start time")
+    batch_completed_at: Optional[datetime] = Field(None, description="Batch completion time")
+    estimated_completion: Optional[datetime] = Field(None, description="Estimated completion time")
 
 
-class ProgressStreamResponse(BaseModel):
-    """Server-sent event for progress updates."""
-    event: str = Field("progress", description="Event type")
-    data: Dict[str, Any] = Field(..., description="Progress data")
-    id: Optional[str] = Field(None, description="Event ID")
-    retry: Optional[int] = Field(None, description="Retry interval in milliseconds")
+class FeedbackResponse(BaseResponse):
+    """Response for feedback submission."""
+    model_config = ConfigDict(from_attributes=True)
+    
+    feedback_id: UUID = Field(..., description="Feedback submission ID")
+    content_id: UUID = Field(..., description="Content ID feedback relates to")
+    
+    # Acknowledgment
+    thank_you_message: str = Field("Thank you for your feedback!", description="Thank you message")
+    
+    # Impact
+    will_impact_future_generations: bool = Field(True, description="Whether feedback will be used")
+    similar_feedback_count: int = Field(0, description="Number of similar feedback items")
+
+
+class SystemInfoResponse(BaseModel):
+    """System information response."""
+    model_config = ConfigDict(from_attributes=True)
+    
+    version: str = Field(..., description="System version")
+    api_version: str = Field(..., description="API version")
+    
+    # Capabilities
+    supported_certifications: List[str] = Field(..., description="Supported certification types")
+    supported_output_formats: List[str] = Field(..., description="Supported output formats")
+    supported_languages: List[str] = Field(..., description="Supported languages")
+    
+    # Agent status
+    agent_statuses: Dict[str, str] = Field(..., description="Status of each agent")
+    
+    # System health
+    system_health: str = Field(..., description="Overall system health")
+    uptime_seconds: float = Field(..., description="System uptime in seconds")
+    
+    # Limits
+    max_file_size_mb: int = Field(..., description="Maximum upload file size in MB")
+    max_generation_duration_minutes: int = Field(..., description="Maximum generation duration")
+    rate_limits: Dict[str, int] = Field(..., description="Rate limits by plan type")
+
+
+class WebSocketMessage(BaseModel):
+    """WebSocket message format."""
+    model_config = ConfigDict(from_attributes=True)
+    
+    type: str = Field(..., description="Message type")
+    data: Dict[str, Any] = Field(..., description="Message data")
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    
+    # For progress updates
+    task_id: Optional[UUID] = Field(None, description="Associated task ID")
+    progress: Optional[float] = Field(None, description="Progress percentage")
+    phase: Optional[str] = Field(None, description="Current phase")
+    
+    # For errors
+    error: Optional[str] = Field(None, description="Error message if applicable")
+    error_code: Optional[str] = Field(None, description="Error code if applicable")

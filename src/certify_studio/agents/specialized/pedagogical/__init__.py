@@ -1,45 +1,9 @@
 """
-Pedagogical reasoning agent module.
+Pedagogical agents module.
 
-This module provides a comprehensive pedagogical reasoning system for
-optimizing learning experiences. It includes:
-
-- Learning path optimization
-- Cognitive load management
-- Personalized content adaptation
-- Assessment generation
-- Learning strategy recommendations
-- Educational theory application
+Contains agents for applying pedagogical principles and learning theories.
 """
 
 from .agent import PedagogicalReasoningAgent
-from .models import (
-    LearningTheory,
-    DifficultyLevel,
-    LearningObjective,
-    LearnerProfile,
-    LearningPath,
-    CognitiveLoadAssessment,
-    AssessmentQuestion,
-    LearningStrategy
-)
 
-__all__ = [
-    # Main agent
-    "PedagogicalReasoningAgent",
-    
-    # Models
-    "LearningTheory",
-    "DifficultyLevel",
-    "LearningObjective",
-    "LearnerProfile",
-    "LearningPath",
-    "CognitiveLoadAssessment",
-    "AssessmentQuestion",
-    "LearningStrategy",
-]
-
-# Module metadata
-__version__ = "1.0.0"
-__author__ = "Certify Studio Team"
-__description__ = "Pedagogical reasoning agent for educational content optimization"
+__all__ = ["PedagogicalReasoningAgent"]

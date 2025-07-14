@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple, Set
 from uuid import UUID, uuid4
 
-from ....core.agents import AutonomousAgent, AgentCapability
+from ....agents.core.autonomous_agent import AutonomousAgent, AgentCapability
 from ....core.interfaces import (
     ContentValidationResult,
     QualityMetrics,
@@ -49,6 +49,8 @@ from .feedback_analyzer import FeedbackAnalyzer
 from .benchmark_manager import BenchmarkManager
 from .continuous_monitor import ContinuousMonitor
 from .report_generator import ReportGenerator
+from .consensus_manager import QualityConsensusOrchestrator
+from ....config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +82,7 @@ class QualityAssuranceAgent(AutonomousAgent):
         self.feedback_analyzer = FeedbackAnalyzer()
         self.benchmark_manager = BenchmarkManager()
         self.continuous_monitor = ContinuousMonitor()
-        self.report_generator = ReportGenerator()
+        self.report_generator = ReportGenerator(settings)
         
         # Initialize beliefs
         self.beliefs: Set[AgentBelief] = {

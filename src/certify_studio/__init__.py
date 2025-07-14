@@ -1,21 +1,21 @@
 """
-Certify Studio - AI-Powered Certification Content Generation Platform
+Certify Studio - AI-powered educational content generation platform.
 
-This package provides the core functionality for generating enterprise-grade
-certification training content using advanced AI agents and Manim animations.
+A revolutionary platform that transforms certification exam guides into
+complete, production-ready educational content through domain abstraction
+and intelligent automation.
 """
 
 __version__ = "0.1.0"
 __author__ = "Certify Studio Team"
 __email__ = "team@certifystudio.com"
 
-# Main application imports
-from .main import app, create_application
-from .config import settings, get_settings
+# Don't import app at module level to avoid circular dependencies
+# Import these when needed:
+# from .main import app, create_application
 
 __all__ = [
-    "app",
-    "create_application", 
-    "settings",
-    "get_settings"
+    "__version__",
+    "__author__",
+    "__email__",
 ]

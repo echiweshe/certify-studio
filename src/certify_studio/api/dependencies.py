@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Annotated, AsyncGenerator
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status, Header, Request
+from fastapi import Depends, HTTPException, status, Header, Request, UploadFile as FastAPIUploadFile
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -258,7 +258,7 @@ def require_admin(current_user: User = Depends(get_current_verified_user)) -> Us
     return current_user
 
 
-class UploadFile:
+class FileUploadValidator:
     """Handle file uploads securely."""
     
     def __init__(
@@ -275,7 +275,7 @@ class UploadFile:
             "application/epub+zip"
         ]
     
-    async def __call__(self, file: UploadFile) -> Dict[str, Any]:
+    async def __call__(self, file: FastAPIUploadFile) -> Dict[str, Any]:
         """Validate and process uploaded file."""
         # Check file size
         contents = await file.read()

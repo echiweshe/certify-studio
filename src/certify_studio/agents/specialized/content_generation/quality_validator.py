@@ -30,8 +30,8 @@ from .models import (
     AnimationSequence,
     QualityMetrics
 )
-from ....core.llm import MultiModalLLM
-from ....core.vision import VisionProcessor
+from ....core.llm import MultimodalLLM
+from ....core.llm.vision_processor import VisionProcessor
 from ....config import settings
 
 
@@ -105,7 +105,7 @@ class QualityValidator:
     """Validates content quality using vision AI."""
     
     def __init__(self):
-        self.llm = MultiModalLLM()
+        self.llm = MultimodalLLM()
         self.vision_processor = VisionProcessor()
         self._quality_benchmarks = self._load_quality_benchmarks()
         self._clip_model = None

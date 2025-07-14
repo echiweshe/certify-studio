@@ -21,14 +21,14 @@ from .models import (
     DocumentChunk,
     DomainKnowledge
 )
-from ....core.llm import MultiModalLLM
+from ....core.llm import MultimodalLLM
 
 
 class WeightCalculator:
     """Calculate domain weights for certification content."""
     
     def __init__(self):
-        self.llm = MultiModalLLM()
+        self.llm = MultimodalLLM()
         
         # Weight indicator patterns
         self.weight_patterns = [

@@ -25,8 +25,9 @@ from .models import (
     ImprovementType,
     LearningRecord
 )
-from ....core.llm import LLMClient
-from ....core.config import Config
+from ....core.llm import MultimodalLLM
+from ....core.llm.multimodal_llm import MultimodalMessage
+from ....core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +35,9 @@ logger = logging.getLogger(__name__)
 class FeedbackAnalyzer:
     """Analyzes feedback to improve content quality."""
     
-    def __init__(self, config: Config):
+    def __init__(self, llm: Optional[MultimodalLLM] = None):
         """Initialize the feedback analyzer."""
-        self.config = config
-        self.llm_client = LLMClient(config)
+        self.llm = llm or MultimodalLLM()
         self.feedback_history = defaultdict(list)
         self.pattern_detector = PatternDetector()
         self.sentiment_analyzer = SentimentAnalyzer()
@@ -232,8 +232,9 @@ class FeedbackAnalyzer:
             Focus on specific, actionable themes.
             """
             
-            response = await self.llm_client.generate(prompt)
-            themes = json.loads(response)
+            response = await self.llm.generate([MultimodalMessage(text=prompt)])
+            response_text = response.text
+            themes = json.loads(response_text)
             return themes[:5]  # Top 5 themes
             
         except Exception as e:
@@ -498,8 +499,9 @@ class FeedbackAnalyzer:
             Format as JSON with fields: type, title, description, steps, impact
             """
             
-            response = await self.llm_client.generate(prompt)
-            suggestion_data = json.loads(response)
+            response = await self.llm.generate([MultimodalMessage(text=prompt)])
+            response_text = response.text
+            suggestion_data = json.loads(response_text)
             
             return ImprovementSuggestion(
                 type=ImprovementType(suggestion_data.get("type", "content_correction")),

@@ -8,6 +8,7 @@ Provides consistent logging format across all modules.
 import sys
 import logging
 from pathlib import Path
+from typing import Any
 from loguru import logger
 
 from ...config import settings
@@ -112,3 +113,22 @@ def setup_logging():
         logging.getLogger(logger_name).handlers = []
     
     logger.info(f"Logging configured - Level: {log_level}, Format: {settings.LOG_FORMAT}")
+
+
+def get_logger(name: str) -> Any:
+    """
+    Get a logger instance for the given module name.
+    
+    Args:
+        name: Module name (typically __name__)
+        
+    Returns:
+        Logger instance configured for the module
+    """
+    # For loguru, we can just return the logger instance
+    # as it handles context automatically
+    return logger.bind(module=name)
+
+
+# Initialize logging on import
+setup_logging()

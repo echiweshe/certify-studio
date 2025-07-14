@@ -10,7 +10,7 @@ This module provides continuous monitoring capabilities:
 
 import asyncio
 import json
-from typing import Dict, List, Optional, Any, Tuple, Callable
+from typing import Dict, List, Optional, Any, Tuple, Callable, Optional
 from datetime import datetime, timedelta
 import logging
 from collections import defaultdict, deque
@@ -24,7 +24,9 @@ from .models import (
     SeverityLevel,
     QualityScore
 )
-from ....core.config import Config
+from ....core.config import settings
+from ....core.llm import MultimodalLLM
+from ....core.llm.multimodal_llm import MultimodalMessage
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +34,9 @@ logger = logging.getLogger(__name__)
 class ContinuousMonitor:
     """Provides continuous quality monitoring for content."""
     
-    def __init__(self, config: Config):
+    def __init__(self, llm: Optional[MultimodalLLM] = None):
         """Initialize the continuous monitor."""
-        self.config = config
+        self.llm = llm or MultimodalLLM()
         self.active_monitors = {}
         self.monitoring_tasks = {}
         self.alert_handlers = []

@@ -15,16 +15,13 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
     async_sessionmaker
 )
-from sqlalchemy.orm import declarative_base
 from sqlalchemy import text
 from sqlalchemy.pool import NullPool
 
 from ..config import settings
+from .models.base import Base
 
 logger = logging.getLogger(__name__)
-
-# Create declarative base
-Base = declarative_base()
 
 
 class DatabaseManager:
@@ -36,18 +33,31 @@ class DatabaseManager:
         
     async def initialize(self):
         """Initialize database engine and session maker."""
+        # Check if database is configured
+        if not settings.DATABASE_URL or settings.DATABASE_URL == "postgresql+asyncpg://postgres:postgres@localhost:5432/certify_studio":
+            logger.warning("Database not configured - running without database")
+            self.engine = None
+            self.async_session_maker = None
+            return
+            
         logger.info("Initializing database connection...")
         
-        # Create async engine
-        self.engine = create_async_engine(
-            settings.DATABASE_URL,
-            echo=settings.DATABASE_ECHO,
-            pool_size=settings.DATABASE_POOL_SIZE,
-            max_overflow=settings.DATABASE_MAX_OVERFLOW,
-            pool_pre_ping=True,  # Verify connections before use
-            # Use NullPool for serverless/Lambda deployments
-            poolclass=NullPool if settings.ENVIRONMENT == "production" else None
-        )
+        try:
+            # Create async engine
+            self.engine = create_async_engine(
+                settings.DATABASE_URL,
+                echo=settings.DATABASE_ECHO,
+                pool_size=settings.DATABASE_POOL_SIZE,
+                max_overflow=settings.DATABASE_MAX_OVERFLOW,
+                pool_pre_ping=True,  # Verify connections before use
+                # Use NullPool for serverless/Lambda deployments
+                poolclass=NullPool if settings.ENVIRONMENT == "production" else None
+            )
+        except Exception as e:
+            logger.error(f"Failed to create database engine: {e}")
+            self.engine = None
+            self.async_session_maker = None
+            return
         
         # Create session maker
         self.async_session_maker = async_sessionmaker(

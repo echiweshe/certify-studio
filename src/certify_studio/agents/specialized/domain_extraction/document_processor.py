@@ -14,7 +14,7 @@ from datetime import datetime
 import hashlib
 
 from loguru import logger
-import PyPDF2
+import pypdf  # Modern version of PyPDF2
 import markdown
 from bs4 import BeautifulSoup
 import docx
@@ -160,7 +160,7 @@ class DocumentProcessor:
             }
             
             with open(path, 'rb') as file:
-                pdf_reader = PyPDF2.PdfReader(file)
+                pdf_reader = pypdf.PdfReader(file)
                 metadata['page_count'] = len(pdf_reader.pages)
                 
                 # Extract metadata

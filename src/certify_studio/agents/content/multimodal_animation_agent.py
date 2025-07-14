@@ -2,7 +2,7 @@
 Enhanced Animation Choreography Agent with multimodal LLM capabilities.
 """
 
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional, Tuple, Union
 from dataclasses import dataclass
 import asyncio
 import json

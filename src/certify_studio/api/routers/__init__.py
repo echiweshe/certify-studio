@@ -1,5 +1,5 @@
 """
-API routers package.
+API routers for different endpoints.
 """
 
 from .auth import router as auth_router
@@ -10,7 +10,7 @@ from .export import router as export_router
 
 __all__ = [
     "auth_router",
-    "generation_router",
+    "generation_router", 
     "domains_router",
     "quality_router",
     "export_router"

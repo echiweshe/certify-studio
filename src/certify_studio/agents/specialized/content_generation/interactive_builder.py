@@ -23,7 +23,7 @@ from .models import (
     MediaType,
     ContentMetadata
 )
-from ....core.llm import MultiModalLLM
+from ....core.llm import MultimodalLLM
 from ....config import settings
 
 
@@ -97,7 +97,7 @@ class InteractiveBuilder:
     """Creates interactive educational elements."""
     
     def __init__(self):
-        self.llm = MultiModalLLM()
+        self.llm = MultimodalLLM()
         self._templates = self._load_interaction_templates()
         self._quiz_bank = {}
         self._simulation_engines = self._initialize_simulation_engines()

@@ -252,10 +252,10 @@ def create_application() -> FastAPI:
 app = create_application()
 
 
-def main():
+def run_server():
     """
-    Main entry point for running the application.
-    Used by CLI and development server.
+    Run the FastAPI server.
+    Used by startup scripts.
     """
     uvicorn.run(
         "certify_studio.main:app",
@@ -266,6 +266,14 @@ def main():
         access_log=settings.DEBUG,
         log_config=None  # We handle logging ourselves
     )
+
+
+def main():
+    """
+    Main entry point for running the application.
+    Used by CLI and development server.
+    """
+    run_server()
 
 
 if __name__ == "__main__":

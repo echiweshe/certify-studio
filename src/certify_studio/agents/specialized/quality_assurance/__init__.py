@@ -1,38 +1,9 @@
 """
-Quality Assurance Agent for Certify Studio.
+Quality assurance agents module.
 
-This agent ensures all generated content meets the highest standards of:
-- Technical accuracy
-- Pedagogical effectiveness
-- Certification alignment
-- Performance optimization
-- Accessibility compliance
+Contains agents for ensuring content quality and standards.
 """
 
 from .agent import QualityAssuranceAgent
-from .models import (
-    QARequest,
-    QAResult,
-    QualityMetrics,
-    ValidationReport,
-    TechnicalAccuracy,
-    CertificationAlignment,
-    PerformanceMetrics,
-    QualityBenchmark,
-    ImprovementSuggestion,
-    QAFeedback
-)
 
-__all__ = [
-    "QualityAssuranceAgent",
-    "QARequest",
-    "QAResult",
-    "QualityMetrics",
-    "ValidationReport",
-    "TechnicalAccuracy",
-    "CertificationAlignment",
-    "PerformanceMetrics",
-    "QualityBenchmark",
-    "ImprovementSuggestion",
-    "QAFeedback"
-]
+__all__ = ["QualityAssuranceAgent"]

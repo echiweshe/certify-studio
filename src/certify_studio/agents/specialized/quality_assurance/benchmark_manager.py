@@ -10,7 +10,7 @@ This module manages quality benchmarks and comparisons:
 
 import asyncio
 import json
-from typing import Dict, List, Optional, Any, Tuple, Set
+from typing import Dict, List, Optional, Any, Tuple, Set, Optional
 from datetime import datetime
 import logging
 from collections import defaultdict
@@ -23,8 +23,9 @@ from .models import (
     ValidationIssue,
     SeverityLevel
 )
-from ....core.llm import LLMClient
-from ....core.config import Config
+from ....core.llm import MultimodalLLM
+from ....core.llm.multimodal_llm import MultimodalMessage
+from ....core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +33,9 @@ logger = logging.getLogger(__name__)
 class BenchmarkManager:
     """Manages quality benchmarks and comparisons."""
     
-    def __init__(self, config: Config):
+    def __init__(self, llm: Optional[MultimodalLLM] = None):
         """Initialize the benchmark manager."""
-        self.config = config
-        self.llm_client = LLMClient(config)
+        self.llm = llm or MultimodalLLM()
         self.benchmarks = self._load_default_benchmarks()
         self.custom_benchmarks = {}
         self.benchmark_results_cache = {}

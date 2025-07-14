@@ -27,7 +27,9 @@ from .models import (
     ImprovementSuggestion,
     ImprovementType
 )
-from ....core.config import Config
+from ....core.config import settings
+from ....core.llm import MultimodalLLM
+from ....core.llm.multimodal_llm import MultimodalMessage
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +37,9 @@ logger = logging.getLogger(__name__)
 class PerformanceMonitor:
     """Monitors and analyzes performance metrics for content generation."""
     
-    def __init__(self, config: Config):
+    def __init__(self, llm: Optional[MultimodalLLM] = None):
         """Initialize the performance monitor."""
-        self.config = config
+        self.llm = llm or MultimodalLLM()
         self.performance_thresholds = self._load_performance_thresholds()
         self.metrics_history = defaultdict(list)
         self.cost_calculator = CostCalculator()

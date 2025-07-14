@@ -14,6 +14,112 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field, validator
 
 
+class QATaskType(str, Enum):
+    """Types of QA tasks."""
+    VALIDATION = "validation"
+    BENCHMARKING = "benchmarking"
+    MONITORING = "monitoring"
+    IMPROVEMENT = "improvement"
+    CERTIFICATION_CHECK = "certification_check"
+    PERFORMANCE_ANALYSIS = "performance_analysis"
+    FEEDBACK_ANALYSIS = "feedback_analysis"
+
+
+@dataclass
+class QATask:
+    """Represents a QA task to be performed."""
+    id: UUID = field(default_factory=uuid4)
+    task_type: QATaskType = QATaskType.VALIDATION
+    content_id: str = ""
+    priority: int = 5  # 1-10, 10 being highest
+    created_at: datetime = field(default_factory=datetime.now)
+    scheduled_for: Optional[datetime] = None
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    status: str = "pending"
+    result: Optional[Any] = None
+
+
+@dataclass
+class BenchmarkResult:
+    """Result of benchmark comparison."""
+    benchmark_id: str = ""
+    benchmark_name: str = ""
+    score: float = 0.0
+    target_score: float = 0.0
+    passed: bool = False
+    details: Dict[str, Any] = field(default_factory=dict)
+    recommendations: List[str] = field(default_factory=list)
+
+
+@dataclass
+class QAMetrics:
+    """Aggregated QA metrics."""
+    total_validations: int = 0
+    passed_validations: int = 0
+    failed_validations: int = 0
+    average_quality_score: float = 0.0
+    common_issues: List[Dict[str, Any]] = field(default_factory=list)
+    improvement_rate: float = 0.0
+    processing_time_avg: float = 0.0
+
+
+@dataclass
+class ContinuousMonitoringData:
+    """Data from continuous monitoring."""
+    monitoring_id: str = ""
+    content_id: str = ""
+    metrics_over_time: List[Dict[str, Any]] = field(default_factory=list)
+    alerts_triggered: List[Dict[str, Any]] = field(default_factory=list)
+    trends: Dict[str, str] = field(default_factory=dict)
+    last_check: datetime = field(default_factory=datetime.now)
+
+
+@dataclass
+class PerformanceReport:
+    """Performance analysis report."""
+    content_id: str = ""
+    generation_time: float = 0.0
+    processing_time: float = 0.0
+    resource_usage: Dict[str, float] = field(default_factory=dict)
+    bottlenecks: List[str] = field(default_factory=list)
+    optimization_suggestions: List[str] = field(default_factory=list)
+
+
+@dataclass
+class CertificationMapping:
+    """Mapping of content to certification objectives."""
+    certification_id: str = ""
+    certification_name: str = ""
+    objective_mappings: Dict[str, List[str]] = field(default_factory=dict)
+    coverage_percentage: float = 0.0
+    gap_analysis: List[str] = field(default_factory=list)
+
+
+@dataclass
+class FeedbackAnalysis:
+    """Analysis of user feedback."""
+    content_id: str = ""
+    total_feedback: int = 0
+    sentiment_score: float = 0.0
+    common_themes: List[str] = field(default_factory=list)
+    improvement_suggestions: List[str] = field(default_factory=list)
+    satisfaction_score: float = 0.0
+
+
+@dataclass
+class QAReportData:
+    """Complete QA report data."""
+    report_id: UUID = field(default_factory=uuid4)
+    content_id: str = ""
+    validation_report: Optional['ValidationReport'] = None
+    benchmark_results: List[BenchmarkResult] = field(default_factory=list)
+    performance_report: Optional[PerformanceReport] = None
+    certification_mapping: Optional[CertificationMapping] = None
+    feedback_analysis: Optional[FeedbackAnalysis] = None
+    overall_recommendation: str = ""
+    generated_at: datetime = field(default_factory=datetime.now)
+
+
 class QualityDimension(str, Enum):
     """Dimensions of quality to assess."""
     TECHNICAL_ACCURACY = "technical_accuracy"

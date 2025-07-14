@@ -24,8 +24,9 @@ from .models import (
     SeverityLevel,
     QualityDimension
 )
-from ....core.llm import LLMClient
-from ....core.config import Config
+from ....core.llm import MultimodalLLM
+from ....core.llm.multimodal_llm import MultimodalMessage
+from ....config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +34,9 @@ logger = logging.getLogger(__name__)
 class TechnicalValidator:
     """Validates technical accuracy of educational content."""
     
-    def __init__(self, config: Config):
+    def __init__(self, llm: Optional[MultimodalLLM] = None):
         """Initialize the technical validator."""
-        self.config = config
-        self.llm_client = LLMClient(config)
+        self.llm = llm or MultimodalLLM()
         self.validation_cache = {}
         self.known_technologies = self._load_technology_database()
         self.best_practices = self._load_best_practices()
@@ -442,11 +442,12 @@ class TechnicalValidator:
             - suggested_fix: How to fix it
             """
             
-            response = await self.llm_client.generate(prompt)
+            response = await self.llm.generate([MultimodalMessage(text=prompt)])
+            response_text = response.text
             
             # Parse LLM response
             try:
-                llm_issues = json.loads(response)
+                llm_issues = json.loads(response_text)
                 for issue in llm_issues:
                     issues.append(ValidationIssue(
                         dimension=QualityDimension.TECHNICAL_ACCURACY,
@@ -518,11 +519,12 @@ class TechnicalValidator:
                 Format response as JSON.
                 """
                 
-                response = await self.llm_client.generate(prompt)
+                response = await self.llm.generate([MultimodalMessage(text=prompt)])
+                response_text = response.text
                 
                 # Parse response and create issues if needed
                 try:
-                    validation = json.loads(response)
+                    validation = json.loads(response_text)
                     if not validation.get("accurate", True):
                         issues.append(ValidationIssue(
                             dimension=QualityDimension.TECHNICAL_ACCURACY,

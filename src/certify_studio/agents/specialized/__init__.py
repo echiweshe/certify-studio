@@ -1,14 +1,18 @@
 """
-Specialized agents for Certify Studio.
+Specialized agents module.
 
-This module contains domain-specific agents that handle specialized tasks:
-- PedagogicalReasoningAgent: Optimizes learning paths and educational content
-- ContentGenerationAgent: Creates diagrams, animations, and interactive content
-- QualityAssuranceAgent: Validates technical accuracy and educational effectiveness
+This module contains all specialized agents for various tasks.
 """
 
-from .pedagogical import PedagogicalReasoningAgent
+# Import all specialized agents for easy access
+from .pedagogical.agent import PedagogicalReasoningAgent
+from .content_generation.agent import ContentGenerationAgent
+from .domain_extraction.agent import DomainExtractionAgent
+from .quality_assurance.agent import QualityAssuranceAgent
 
 __all__ = [
     "PedagogicalReasoningAgent",
+    "ContentGenerationAgent",
+    "DomainExtractionAgent",
+    "QualityAssuranceAgent",
 ]

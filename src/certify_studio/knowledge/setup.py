@@ -1,116 +1,130 @@
 """
-Clean setup for Unified GraphRAG System - No migration needed!
-
-This is the recommended setup for new Certify Studio deployments.
+Setup script for Certify Studio knowledge system.
+This can be run with: python -m certify_studio.knowledge.setup
 """
 
-from typing import Optional
+import asyncio
+import logging
 from pathlib import Path
 
-from loguru import logger
-
-from ..knowledge import UnifiedGraphRAG, UnifiedVectorStore
-from ..agents.specialized.domain_extraction import DomainExtractionAgent
+logger = logging.getLogger(__name__)
 
 
-async def setup_unified_system(
-    neo4j_uri: str = "bolt://localhost:7687",
-    neo4j_user: str = "neo4j",
-    neo4j_password: str = "certify-studio-2024"
-):
-    """
-    Set up the unified GraphRAG system for Certify Studio.
-    
-    This is the clean setup - no migration needed since there's no legacy data.
-    """
-    logger.info("Setting up Unified GraphRAG system")
-    
-    # 1. Create and initialize the unified GraphRAG
-    graphrag = UnifiedGraphRAG(
-        neo4j_uri=neo4j_uri,
-        neo4j_user=neo4j_user,
-        neo4j_password=neo4j_password
-    )
-    await graphrag.initialize()
-    logger.success("Unified GraphRAG initialized")
-    
-    # 2. Create Domain Extraction Agent
-    domain_agent = DomainExtractionAgent()
-    await domain_agent.initialize()
-    
-    # 3. Connect Domain Extraction to Unified GraphRAG
-    # Replace the old vector store with unified system
-    domain_agent.vector_store = UnifiedVectorStore(graphrag)
-    
-    # 4. Enhance extraction to automatically import into unified graph
-    original_extract = domain_agent.extract_domain_knowledge
-    
-    async def enhanced_extract(request):
-        """Extract knowledge and import into unified graph."""
-        # Run extraction
-        result = await original_extract(request)
+async def setup_neo4j():
+    """Setup Neo4j database with required indexes and constraints."""
+    try:
+        from neo4j import AsyncGraphDatabase
         
-        if result.success and result.domain_knowledge:
-            # Import into unified graph
-            stats = await graphrag.import_from_domain_extraction(
-                result.domain_knowledge
-            )
-            logger.info(f"Imported into unified graph: {stats}")
+        # Neo4j connection details
+        uri = "bolt://localhost:7687"
+        auth = ("neo4j", "password")  # Change this!
+        
+        driver = AsyncGraphDatabase.driver(uri, auth=auth)
+        
+        async with driver.session() as session:
+            # Create indexes
+            queries = [
+                # Vector indexes for GraphRAG
+                """
+                CREATE VECTOR INDEX concept_embedding IF NOT EXISTS
+                FOR (n:Concept)
+                ON (n.embedding)
+                OPTIONS {indexConfig: {
+                    `vector.dimensions`: 1536,
+                    `vector.similarity_function`: 'cosine'
+                }}
+                """,
+                """
+                CREATE VECTOR INDEX issue_embedding IF NOT EXISTS
+                FOR (n:Issue)
+                ON (n.embedding)
+                OPTIONS {indexConfig: {
+                    `vector.dimensions`: 1536,
+                    `vector.similarity_function`: 'cosine'
+                }}
+                """,
+                # Regular indexes
+                "CREATE INDEX concept_name IF NOT EXISTS FOR (n:Concept) ON (n.name)",
+                "CREATE INDEX concept_type IF NOT EXISTS FOR (n:Concept) ON (n.type)",
+                "CREATE INDEX issue_type IF NOT EXISTS FOR (n:Issue) ON (n.type)",
+                "CREATE INDEX solution_type IF NOT EXISTS FOR (n:Solution) ON (n.type)",
+                # Constraints
+                "CREATE CONSTRAINT concept_id IF NOT EXISTS FOR (n:Concept) REQUIRE n.id IS UNIQUE",
+                "CREATE CONSTRAINT issue_id IF NOT EXISTS FOR (n:Issue) REQUIRE n.id IS UNIQUE",
+                "CREATE CONSTRAINT solution_id IF NOT EXISTS FOR (n:Solution) REQUIRE n.id IS UNIQUE"
+            ]
             
-            # Add stats to result metadata
-            result.metadata["unified_graph_stats"] = stats
-            
-        return result
-    
-    # Replace the method
-    domain_agent.extract_domain_knowledge = enhanced_extract
-    
-    logger.success("Domain Extraction connected to Unified GraphRAG")
-    
-    return graphrag, domain_agent
+            for query in queries:
+                try:
+                    await session.run(query)
+                    logger.info(f"Executed: {query.split()[2]} {query.split()[3]}")
+                except Exception as e:
+                    logger.warning(f"Query failed (may already exist): {e}")
+        
+        await driver.close()
+        logger.info("Neo4j setup completed!")
+        
+    except ImportError:
+        logger.error("neo4j package not installed. Run: pip install neo4j")
+    except Exception as e:
+        logger.error(f"Neo4j setup failed: {e}")
+        logger.info("Make sure Neo4j is running on localhost:7687")
 
 
-# Example usage
+async def create_directories():
+    """Create required directories."""
+    dirs = [
+        "uploads",
+        "exports",
+        "exports/videos",
+        "temp",
+        "logs",
+        "data/vector_store",
+        "data/knowledge_base"
+    ]
+    
+    for dir_path in dirs:
+        Path(dir_path).mkdir(parents=True, exist_ok=True)
+        logger.info(f"Created directory: {dir_path}")
+
+
+async def setup_unified_system():
+    """Setup the unified knowledge system."""
+    logger.info("Setting up unified knowledge system...")
+    
+    # Create directories
+    await create_directories()
+    
+    # Setup Neo4j if available
+    try:
+        await setup_neo4j()
+    except Exception as e:
+        logger.warning(f"Neo4j setup skipped: {e}")
+        logger.info("The system will work without Neo4j, using in-memory storage")
+    
+    logger.info("Unified system setup complete")
+    return True
+
+
 async def main():
-    """Example of using the unified system."""
-    # Set up the system
-    graphrag, domain_agent = await setup_unified_system()
+    """Run all setup tasks."""
+    logging.basicConfig(level=logging.INFO)
     
-    # Extract knowledge from a document
-    from ..agents.specialized.domain_extraction.models import ExtractionRequest
+    print("🚀 Setting up Certify Studio...")
     
-    request = ExtractionRequest(
-        document_paths=["path/to/certification-guide.pdf"],
-        domain_name="AWS Solutions Architect",
-        certification_name="AWS-SAA-C03"
-    )
+    # Create directories
+    await create_directories()
     
-    # This will automatically extract AND import into unified graph
-    result = await domain_agent.extract_domain_knowledge(request)
+    # Setup Neo4j
+    print("\n📊 Setting up Neo4j...")
+    await setup_neo4j()
     
-    if result.success:
-        print(f"Extracted and imported: {result.metadata['unified_graph_stats']}")
-    
-    # Now you can query the unified system
-    from ..knowledge import GraphRAGQuery
-    
-    # Educational query
-    edu_result = await graphrag.search(GraphRAGQuery(
-        query_text="What are VPC endpoints?",
-        query_type="educational"
-    ))
-    
-    # Troubleshooting query
-    trouble_result = await graphrag.search(GraphRAGQuery(
-        query_text="Lambda function timeout in VPC",
-        query_type="troubleshooting"
-    ))
-    
-    # The system has both educational content AND troubleshooting in ONE graph!
-    
-    await graphrag.close()
+    print("\n✅ Setup complete!")
+    print("\nNext steps:")
+    print("1. Make sure Neo4j is running")
+    print("2. Update Neo4j credentials in your .env file")
+    print("3. Run: uvicorn certify_studio.api.main:app --reload")
 
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())

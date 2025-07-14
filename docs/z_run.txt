@@ -1,0 +1,80 @@
+Then, run uvicorn from the project root with the --app-dir flag:
+# From project root (C:\ZBDuo_Share\Labs\src\BttlnsCldMCP\certify-studio)
+
+uvicorn certify_studio.api.main:app --reload --app-dir src
+
+
+Or, you can use the Python module approach:
+# From project root
+
+python -m uvicorn certify_studio.api.main:app --reload --app-dir src
+
+
+Alternatively, since we have a dev script, you can use:
+# From project root
+
+python scripts/dev.py api
+
+
+|#################################################
+
+2. Launching Your Project
+I've created three launch options for you:
+Option 1: Quick Start (Recommended for first run)
+bashpython scripts/quickstart.py
+Option 2: Full Enterprise Launch
+bashpython scripts/launch.py --mode dev
+Option 3: Using the Dev Script
+bash# First setup dependencies if needed
+python scripts/setup_dependencies.py
+
+# Then run the dev server
+python scripts/dev.py api
+
+
+
+-----------------------------------
+# Run all tests with coverage
+python run_tests.py coverage
+
+# Run specific test categories
+python run_tests.py unit
+python run_tests.py integration
+python run_tests.py e2e
+
+# Watch mode for development
+python run_tests.py watch
+
+-----------------------------------
+
+# Step 1: Exit any virtual environment
+deactivate
+
+# Step 2: Remove the old venv directory
+Remove-Item -Recurse -Force venv
+
+# Step 3: Remove the .venv directory to start fresh
+Remove-Item -Recurse -Force .venv
+
+# Step 4: Create a fresh virtual environment with uv
+uv venv
+
+# Step 5: Install all dependencies including test requirements
+uv pip sync requirements.txt requirements-test.txt
+
+# Step 6: Install the project in editable mode
+uv pip install -e .
+
+# Step 7: Run tests using uv run
+uv run pytest -v -m unit
+
+----------------------------------------
+
+Option 4: Trace all imports (comprehensive)
+bashuv run python trace_imports.py
+
+
+
+
+
+

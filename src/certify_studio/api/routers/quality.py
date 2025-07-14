@@ -2,27 +2,38 @@
 Quality assurance router - handles content quality checking and monitoring.
 """
 
-from datetime import datetime
-from typing import Dict, Any, List, Optional
+import asyncio
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any, List
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
+from fastapi import (
+    APIRouter, Depends, HTTPException, status,
+    BackgroundTasks, Query, WebSocket, WebSocketDisconnect
+)
 
 from ...core.logging import get_logger
 from ...agents.specialized.quality_assurance import QualityAssuranceAgent
+from ...agents.specialized.quality_assurance.models import (
+    QARequest,
+    QAReport,
+    FeedbackData,
+    ContinuousMonitoringConfig
+)
+from sqlalchemy.ext.asyncio import AsyncSession
 from ..dependencies import (
-    VerifiedUser,
-    Database,
-    RateLimit,
+    get_current_verified_user,
+    AsyncSession,
+    check_rate_limit,
     get_request_id
 )
 from ..schemas import (
     QualityCheckRequest,
     QualityCheckResponse,
+    FeedbackSubmission,
     StatusEnum,
     ErrorResponse,
-    FeedbackSubmission,
-    FeedbackResponse
+    BaseResponse
 )
 
 logger = get_logger(__name__)
@@ -30,7 +41,7 @@ logger = get_logger(__name__)
 router = APIRouter(
     prefix="/quality",
     tags=["quality-assurance"],
-    dependencies=[Depends(RateLimit)],
+    dependencies=[Depends(check_rate_limit)],
     responses={
         401: {"model": ErrorResponse, "description": "Unauthorized"},
         403: {"model": ErrorResponse, "description": "Forbidden"},
@@ -38,301 +49,335 @@ router = APIRouter(
     }
 )
 
-# Quality assurance agent instance
+# Global QA agent (in production, use dependency injection)
 qa_agent = QualityAssuranceAgent()
 
-# Active monitoring tasks
-active_monitors: Dict[UUID, Dict[str, Any]] = {}
+# Active QA tasks
+qa_tasks: Dict[UUID, Dict[str, Any]] = {}
+
+# Monitoring tasks
+monitoring_tasks: Dict[UUID, Dict[str, Any]] = {}
 
 
 @router.post(
     "/check",
     response_model=QualityCheckResponse,
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Check content quality",
-    description="Perform comprehensive quality assessment on generated content"
+    description="Perform comprehensive quality assurance on generated content"
 )
 async def check_quality(
     request: QualityCheckRequest,
     background_tasks: BackgroundTasks,
-    current_user: VerifiedUser,
-    db: Database,
+    current_user: get_current_verified_user,
+    db: AsyncSession,
     request_id: str = Depends(get_request_id)
 ) -> QualityCheckResponse:
-    """Check content quality."""
+    """Start quality check on content."""
     try:
         # Initialize agent if needed
-        if not qa_agent.is_initialized:
+        if not qa_agent._initialized:
             await qa_agent.initialize()
         
-        # Get content data
-        # In production, retrieve from database
+        # Verify content ownership
+        # content = await db.get(Content, request.content_id)
+        # if not content or content.user_id != current_user.id:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_404_NOT_FOUND,
+        #         detail="Content not found"
+        #     )
+        
+        # For demo, create mock content
         content = {
             "id": request.content_id,
-            "type": "educational_content",
-            "data": {}  # Would contain actual content
+            "title": "AWS Solutions Architect Course",
+            "type": "video",
+            "data": {}  # Would contain actual content data
         }
         
-        # Create QA request
-        qa_request = {
-            "content": content,
-            "requirements": {
-                "minimum_quality_score": 0.85,
-                "check_technical_accuracy": request.check_technical_accuracy,
-                "check_pedagogical_effectiveness": request.check_pedagogical_effectiveness,
-                "check_accessibility": request.check_accessibility,
-                "check_certification_alignment": request.check_certification_alignment
-            },
-            "previous_feedback": request.previous_feedback,
-            "enable_monitoring": request.enable_continuous_monitoring,
-            "monitoring_config": {
-                "interval_minutes": request.monitoring_interval_minutes
-            } if request.enable_continuous_monitoring else None
-        }
-        
-        # Run quality check
-        result = await qa_agent.assure_quality(qa_request)
-        
-        if not result.success:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Quality check failed"
-            )
-        
-        # Build response
-        response = QualityCheckResponse(
-            status=StatusEnum.SUCCESS,
-            message="Quality check completed",
-            check_id=uuid4(),
-            content_id=request.content_id,
-            overall_quality_score=result.overall_score,
-            passed_quality_threshold=result.overall_score >= 0.85,
-            issues_found=[],
-            recommendations=result.recommendations,
-            monitoring_enabled=request.enable_continuous_monitoring,
-            request_id=UUID(request_id)
+        # Create QA task
+        task_id = uuid4()
+        qa_request = QARequest(
+            content_id=str(request.content_id),
+            content_type="educational_video",
+            content_data=content["data"],
+            check_technical_accuracy=request.check_technical_accuracy,
+            check_pedagogical_effectiveness=request.check_pedagogical_effectiveness,
+            check_accessibility=request.check_accessibility,
+            check_certification_alignment=request.check_certification_alignment,
+            certification_name="AWS-SAA-C03"  # Would come from content metadata
         )
         
-        # Add detailed scores if available
-        if result.quality_report:
-            metrics = result.quality_report.overall_metrics
-            response.technical_accuracy_score = metrics.technical_accuracy
-            response.pedagogical_effectiveness_score = metrics.pedagogical_effectiveness
-            response.accessibility_score = metrics.accessibility_score
-            response.certification_alignment_score = 0.92  # Would come from cert aligner
-            
-            # Add detailed reports
-            response.technical_report = {
-                "accuracy": metrics.technical_accuracy,
-                "issues": [],
-                "validated_examples": 42,
-                "fact_checks_passed": 38
-            }
-            
-            response.pedagogical_report = {
-                "effectiveness": metrics.pedagogical_effectiveness,
-                "cognitive_load_optimization": 0.88,
-                "learning_path_coherence": 0.91,
-                "engagement_prediction": 0.85
-            }
-            
-            response.accessibility_report = {
-                "wcag_compliance": metrics.accessibility_score,
-                "issues": [],
-                "features": ["captions", "alt_text", "keyboard_nav"]
-            }
+        # Store task info
+        qa_tasks[task_id] = {
+            "user_id": current_user.id,
+            "content_id": request.content_id,
+            "status": StatusEnum.PROCESSING,
+            "started_at": datetime.utcnow(),
+            "request": qa_request
+        }
         
-        # Start monitoring if requested
-        if request.enable_continuous_monitoring and result.monitoring_id:
-            response.monitoring_id = result.monitoring_id
+        # Start QA in background
+        background_tasks.add_task(
+            run_quality_check,
+            task_id,
+            qa_request,
+            current_user.id,
+            db
+        )
+        
+        # Enable continuous monitoring if requested
+        if request.enable_continuous_monitoring:
+            monitor_config = ContinuousMonitoringConfig(
+                content_id=str(request.content_id),
+                check_interval_minutes=request.monitoring_interval_minutes,
+                quality_thresholds={
+                    "technical_accuracy": 0.85,
+                    "pedagogical_effectiveness": 0.80,
+                    "accessibility_score": 0.90,
+                    "certification_alignment": 0.85
+                },
+                alert_on_degradation=True
+            )
             
-            # Track monitoring task
-            active_monitors[result.monitoring_id] = {
-                "content_id": request.content_id,
-                "user_id": current_user.id,
-                "started_at": datetime.utcnow(),
-                "interval": request.monitoring_interval_minutes
+            monitoring_tasks[request.content_id] = {
+                "config": monitor_config,
+                "active": True,
+                "last_check": datetime.utcnow()
             }
             
-            # Start background monitoring
             background_tasks.add_task(
-                monitor_quality,
-                result.monitoring_id,
+                start_continuous_monitoring,
                 request.content_id,
-                request.monitoring_interval_minutes
+                monitor_config,
+                current_user.id
             )
         
-        return response
+        return QualityCheckResponse(
+            status=StatusEnum.SUCCESS,
+            message="Quality check started",
+            request_id=UUID(request_id),
+            check_id=task_id,
+            content_id=request.content_id,
+            overall_quality=0.0,
+            passed=False,
+            technical_accuracy=0.0,
+            pedagogical_effectiveness=0.0,
+            accessibility_compliance=0.0,
+            certification_alignment=0.0
+        )
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Quality check error: {e}")
+        logger.error(f"Quality check start error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Quality check failed"
+            detail="Failed to start quality check"
         )
 
 
-async def monitor_quality(
-    monitor_id: UUID,
-    content_id: UUID,
-    interval_minutes: int
+async def run_quality_check(
+    task_id: UUID,
+    request: QARequest,
+    user_id: UUID,
+    db: AsyncSession
 ) -> None:
-    """Background task for continuous quality monitoring."""
+    """Run quality check in background."""
     try:
-        import asyncio
+        # Perform QA
+        report = await qa_agent.perform_qa(request)
         
-        while monitor_id in active_monitors:
-            # Wait for interval
-            await asyncio.sleep(interval_minutes * 60)
-            
-            # Run quality check
-            # In production, this would check for changes and re-evaluate
-            logger.info(f"Running scheduled quality check for monitor {monitor_id}")
-            
-            # Update monitor data
-            if monitor_id in active_monitors:
-                active_monitors[monitor_id]["last_check"] = datetime.utcnow()
-                
+        # Calculate overall quality
+        scores = [
+            report.technical_accuracy_score,
+            report.pedagogical_effectiveness_score,
+            report.accessibility_score,
+            report.certification_alignment_score
+        ]
+        overall_quality = sum(scores) / len(scores)
+        
+        # Update task
+        qa_tasks[task_id].update({
+            "status": StatusEnum.COMPLETED,
+            "completed_at": datetime.utcnow(),
+            "report": report,
+            "overall_quality": overall_quality,
+            "passed": overall_quality >= 0.85  # 85% threshold
+        })
+        
+        # Update content quality score in database
+        # await db.execute(
+        #     update(Content).where(Content.id == request.content_id).values(
+        #         quality_score=overall_quality,
+        #         last_qa_check=datetime.utcnow()
+        #     )
+        # )
+        # await db.commit()
+        
     except Exception as e:
-        logger.error(f"Monitoring error for {monitor_id}: {e}")
-        if monitor_id in active_monitors:
-            del active_monitors[monitor_id]
+        logger.error(f"Quality check error for task {task_id}: {e}")
+        qa_tasks[task_id].update({
+            "status": StatusEnum.FAILED,
+            "error": str(e)
+        })
 
 
 @router.get(
-    "/monitoring/{monitor_id}",
-    response_model=Dict[str, Any],
-    summary="Get monitoring status",
-    description="Get status and metrics from continuous quality monitoring"
+    "/check/{task_id}",
+    response_model=QualityCheckResponse,
+    summary="Get quality check results",
+    description="Get the results of a quality check task"
 )
-async def get_monitoring_status(
-    monitor_id: UUID,
-    current_user: VerifiedUser
-) -> Dict[str, Any]:
-    """Get monitoring status."""
-    if monitor_id not in active_monitors:
+async def get_quality_results(
+    task_id: UUID,
+    current_user: get_current_verified_user,
+    request_id: str = Depends(get_request_id)
+) -> QualityCheckResponse:
+    """Get quality check results."""
+    if task_id not in qa_tasks:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Monitor not found"
+            detail="Quality check task not found"
         )
     
-    monitor = active_monitors[monitor_id]
+    task = qa_tasks[task_id]
     
     # Check ownership
-    if monitor["user_id"] != current_user.id:
+    if task["user_id"] != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
         )
     
-    # Get monitoring data
-    monitor_data = await qa_agent.continuous_monitor.get_monitor_data(monitor_id)
+    # Build response
+    response = QualityCheckResponse(
+        status=StatusEnum.SUCCESS,
+        message="Quality check results retrieved",
+        request_id=UUID(request_id),
+        check_id=task_id,
+        content_id=task["content_id"],
+        overall_quality=task.get("overall_quality", 0.0),
+        passed=task.get("passed", False),
+        technical_accuracy=0.0,
+        pedagogical_effectiveness=0.0,
+        accessibility_compliance=0.0,
+        certification_alignment=0.0
+    )
     
-    return {
-        "status": "success",
-        "monitor_id": str(monitor_id),
-        "content_id": str(monitor["content_id"]),
-        "started_at": monitor["started_at"],
-        "last_check": monitor.get("last_check"),
-        "interval_minutes": monitor["interval"],
-        "metrics": monitor_data.metrics if monitor_data else [],
-        "alerts": monitor_data.alerts if monitor_data else [],
-        "trends": {
-            "quality_score": "stable",
-            "technical_accuracy": "improving",
-            "user_satisfaction": "stable"
-        }
-    }
-
-
-@router.delete(
-    "/monitoring/{monitor_id}",
-    response_model=Dict[str, str],
-    summary="Stop monitoring",
-    description="Stop continuous quality monitoring"
-)
-async def stop_monitoring(
-    monitor_id: UUID,
-    current_user: VerifiedUser
-) -> Dict[str, str]:
-    """Stop quality monitoring."""
-    if monitor_id not in active_monitors:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Monitor not found"
-        )
+    if task["status"] == StatusEnum.COMPLETED:
+        report = task["report"]
+        
+        response.technical_accuracy = report.technical_accuracy_score
+        response.pedagogical_effectiveness = report.pedagogical_effectiveness_score
+        response.accessibility_compliance = report.accessibility_score
+        response.certification_alignment = report.certification_alignment_score
+        
+        # Add issues and recommendations
+        response.issues = [
+            {
+                "type": issue.type,
+                "severity": issue.severity,
+                "description": issue.description,
+                "location": issue.location,
+                "suggestion": issue.suggestion
+            }
+            for issue in report.issues
+        ]
+        
+        response.recommendations = report.recommendations
+        
+        # Add benchmark comparison if available
+        if hasattr(report, 'benchmark_comparison'):
+            response.benchmark_comparison = {
+                "industry_average": report.benchmark_comparison.industry_average,
+                "percentile": report.benchmark_comparison.percentile,
+                "comparison": report.benchmark_comparison.comparison
+            }
     
-    monitor = active_monitors[monitor_id]
+    elif task["status"] == StatusEnum.PROCESSING:
+        response.message = "Quality check in progress"
     
-    # Check ownership
-    if monitor["user_id"] != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
+    else:  # Failed
+        response.message = f"Quality check failed: {task.get('error', 'Unknown error')}"
     
-    # Stop monitoring
-    await qa_agent.continuous_monitor.stop_monitoring(monitor_id)
-    del active_monitors[monitor_id]
-    
-    return {
-        "status": "success",
-        "message": "Monitoring stopped"
-    }
+    return response
 
 
 @router.post(
     "/feedback",
     response_model=FeedbackResponse,
     summary="Submit feedback",
-    description="Submit user feedback for content improvement"
+    description="Submit user feedback on content quality"
 )
 async def submit_feedback(
     feedback: FeedbackSubmission,
-    current_user: VerifiedUser,
-    db: Database
+    current_user: get_current_verified_user,
+    db: AsyncSession,
+    request_id: str = Depends(get_request_id)
 ) -> FeedbackResponse:
-    """Submit user feedback."""
+    """Submit feedback on content."""
     try:
-        # Store feedback
-        feedback_id = uuid4()
+        # Verify content ownership
+        # content = await db.get(Content, feedback.content_id)
+        # if not content:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_404_NOT_FOUND,
+        #         detail="Content not found"
+        #     )
         
-        # Analyze feedback
-        analysis = await qa_agent.feedback_analyzer.analyze_feedback([{
-            "rating": feedback.overall_rating,
-            "technical_accuracy": feedback.technical_accuracy_rating,
-            "clarity": feedback.clarity_rating,
-            "engagement": feedback.engagement_rating,
-            "comments": feedback.comments,
-            "liked_sections": feedback.liked_sections,
-            "improvement_areas": feedback.improvement_areas
-        }])
-        
-        # Determine if update is needed
-        will_trigger_update = (
-            feedback.overall_rating <= 2 or
-            len(feedback.improvement_areas or []) > 3 or
-            analysis.confidence > 0.9
+        # Create feedback data
+        feedback_data = FeedbackData(
+            content_id=str(feedback.content_id),
+            user_id=str(current_user.id),
+            overall_rating=feedback.overall_rating,
+            technical_accuracy_rating=feedback.technical_accuracy_rating,
+            clarity_rating=feedback.clarity_rating,
+            engagement_rating=feedback.engagement_rating,
+            liked_sections=feedback.liked_sections or [],
+            improvement_areas=feedback.improvement_areas or [],
+            comments=feedback.comments,
+            user_experience_level=feedback.user_experience_level,
+            completion_percentage=feedback.completion_percentage,
+            timestamp=datetime.utcnow()
         )
         
-        # Priority based on rating and feedback
-        priority = "high" if feedback.overall_rating <= 2 else "medium"
-        if feedback.overall_rating >= 4 and not feedback.improvement_areas:
-            priority = "low"
+        # Analyze feedback
+        analysis = await qa_agent.feedback_analyzer.analyze_feedback(
+            [feedback_data],
+            str(feedback.content_id)
+        )
+        
+        # Store feedback in database
+        feedback_id = uuid4()
+        # await db.execute(
+        #     insert(Feedback).values(
+        #         id=feedback_id,
+        #         content_id=feedback.content_id,
+        #         user_id=current_user.id,
+        #         overall_rating=feedback.overall_rating,
+        #         data=feedback.dict(),
+        #         created_at=datetime.utcnow()
+        #     )
+        # )
+        # await db.commit()
+        
+        # Check for similar feedback
+        similar_count = 0  # Would query database for similar feedback
         
         return FeedbackResponse(
             status=StatusEnum.SUCCESS,
-            message="Feedback received",
+            message="Thank you for your feedback!",
+            request_id=UUID(request_id),
             feedback_id=feedback_id,
             content_id=feedback.content_id,
-            sentiment_score=analysis.average_rating / 5.0,
-            key_themes=analysis.common_themes[:5],
-            suggested_improvements=analysis.suggested_improvements[:3],
-            will_trigger_update=will_trigger_update,
-            priority_level=priority
+            thank_you_message="Your feedback helps us improve content quality for everyone.",
+            will_impact_future_generations=True,
+            similar_feedback_count=similar_count
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Feedback submission error: {e}")
         raise HTTPException(
@@ -342,171 +387,192 @@ async def submit_feedback(
 
 
 @router.get(
-    "/benchmarks",
+    "/benchmarks/{certification_type}",
     response_model=Dict[str, Any],
     summary="Get quality benchmarks",
-    description="Get current quality benchmarks and industry standards"
+    description="Get industry quality benchmarks for certification type"
 )
 async def get_benchmarks(
-    current_user: VerifiedUser
+    certification_type: str,
+    current_user: get_current_verified_user = Depends()
 ) -> Dict[str, Any]:
-    """Get quality benchmarks."""
+    """Get quality benchmarks for certification type."""
     try:
-        benchmarks = await qa_agent.benchmark_manager.get_current_benchmarks()
+        benchmarks = await qa_agent.benchmark_manager.get_benchmark(certification_type)
         
-        return {
-            "status": "success",
-            "benchmarks": {
+        if not benchmarks:
+            # Return default benchmarks
+            benchmarks = {
+                "certification_type": certification_type,
                 "technical_accuracy": {
-                    "current": 0.95,
-                    "industry_average": 0.92,
-                    "top_percentile": 0.98
+                    "minimum": 0.85,
+                    "target": 0.95,
+                    "industry_average": 0.90
                 },
                 "pedagogical_effectiveness": {
-                    "current": 0.90,
-                    "industry_average": 0.85,
-                    "top_percentile": 0.95
+                    "minimum": 0.80,
+                    "target": 0.90,
+                    "industry_average": 0.85
                 },
                 "accessibility_compliance": {
-                    "current": 0.98,
-                    "industry_average": 0.88,
-                    "top_percentile": 0.99
+                    "minimum": 0.90,
+                    "target": 1.00,
+                    "industry_average": 0.85
                 },
-                "user_satisfaction": {
-                    "current": 4.2,
-                    "industry_average": 3.8,
-                    "top_percentile": 4.7
+                "certification_alignment": {
+                    "minimum": 0.85,
+                    "target": 0.95,
+                    "industry_average": 0.88
                 }
-            },
-            "last_updated": datetime.utcnow(),
-            "sample_size": 1523,
-            "methodology": "Aggregated from top educational platforms"
-        }
+            }
+        
+        return benchmarks
         
     except Exception as e:
-        logger.error(f"Get benchmarks error: {e}")
+        logger.error(f"Benchmark retrieval error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve benchmarks"
+            detail="Failed to get benchmarks"
         )
 
 
 @router.get(
-    "/reports/{content_id}",
+    "/monitor/{content_id}",
     response_model=Dict[str, Any],
-    summary="Get quality reports",
-    description="Get detailed quality reports for content"
+    summary="Get monitoring status",
+    description="Get continuous monitoring status for content"
 )
-async def get_quality_reports(
+async def get_monitoring_status(
     content_id: UUID,
-    current_user: VerifiedUser,
-    report_type: Optional[str] = Query(None, description="Report type filter"),
-    start_date: Optional[datetime] = Query(None, description="Start date"),
-    end_date: Optional[datetime] = Query(None, description="End date")
+    current_user: get_current_verified_user = Depends()
 ) -> Dict[str, Any]:
-    """Get quality reports."""
-    try:
-        # In production, retrieve reports from database
-        reports = [
-            {
-                "report_id": str(uuid4()),
-                "type": "comprehensive",
-                "generated_at": datetime.utcnow(),
-                "overall_score": 0.92,
-                "summary": "Content meets quality standards with minor improvements suggested",
-                "download_url": f"/api/quality/reports/download/{uuid4()}"
-            }
-        ]
-        
+    """Get monitoring status for content."""
+    if content_id not in monitoring_tasks:
         return {
-            "status": "success",
             "content_id": str(content_id),
-            "total_reports": len(reports),
-            "reports": reports,
-            "quality_trend": {
-                "direction": "improving",
-                "change_percentage": 3.5,
-                "period": "last_30_days"
-            }
+            "monitoring_active": False,
+            "message": "No active monitoring for this content"
         }
-        
-    except Exception as e:
-        logger.error(f"Get reports error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve quality reports"
-        )
+    
+    monitor = monitoring_tasks[content_id]
+    
+    return {
+        "content_id": str(content_id),
+        "monitoring_active": monitor["active"],
+        "check_interval_minutes": monitor["config"].check_interval_minutes,
+        "last_check": monitor["last_check"],
+        "next_check": monitor["last_check"] + timedelta(
+            minutes=monitor["config"].check_interval_minutes
+        ),
+        "quality_thresholds": monitor["config"].quality_thresholds,
+        "alert_on_degradation": monitor["config"].alert_on_degradation
+    }
 
 
 @router.post(
-    "/improve/{content_id}",
-    response_model=Dict[str, Any],
-    summary="Improve content quality",
-    description="Apply quality improvements based on feedback and analysis"
+    "/monitor/{content_id}/stop",
+    response_model=BaseResponse,
+    summary="Stop monitoring",
+    description="Stop continuous monitoring for content"
 )
-async def improve_content(
+async def stop_monitoring(
     content_id: UUID,
-    current_user: VerifiedUser,
-    background_tasks: BackgroundTasks,
-    apply_all_suggestions: bool = Query(True, description="Apply all improvement suggestions"),
-    regenerate_low_quality: bool = Query(True, description="Regenerate low-quality sections")
-) -> Dict[str, Any]:
-    """Improve content quality."""
-    try:
-        # Create improvement task
-        task_id = uuid4()
-        
-        # Start improvement in background
-        background_tasks.add_task(
-            run_quality_improvements,
-            task_id,
-            content_id,
-            apply_all_suggestions,
-            regenerate_low_quality
-        )
-        
-        return {
-            "status": "success",
-            "message": "Quality improvement started",
-            "task_id": str(task_id),
-            "content_id": str(content_id),
-            "estimated_time_minutes": 15,
-            "improvements_planned": [
-                "Technical accuracy verification",
-                "Pedagogical flow optimization",
-                "Accessibility enhancements",
-                "User feedback integration"
-            ]
-        }
-        
-    except Exception as e:
-        logger.error(f"Improve content error: {e}")
+    current_user: get_current_verified_user,
+    request_id: str = Depends(get_request_id)
+) -> BaseResponse:
+    """Stop continuous monitoring."""
+    if content_id not in monitoring_tasks:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to start quality improvements"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active monitoring for this content"
         )
+    
+    # Stop monitoring
+    monitoring_tasks[content_id]["active"] = False
+    
+    return BaseResponse(
+        status=StatusEnum.SUCCESS,
+        message="Monitoring stopped successfully",
+        request_id=UUID(request_id)
+    )
 
 
-async def run_quality_improvements(
-    task_id: UUID,
+@router.websocket("/monitor/{content_id}/ws")
+async def websocket_monitoring(
+    websocket: WebSocket,
     content_id: UUID,
-    apply_all: bool,
-    regenerate: bool
-) -> None:
-    """Run quality improvements in background."""
+    current_user: get_current_verified_user = Depends(get_ws_user)
+):
+    """WebSocket endpoint for real-time quality monitoring."""
+    await websocket.accept()
+    
     try:
-        logger.info(f"Running quality improvements for content {content_id}")
+        if content_id not in monitoring_tasks:
+            await websocket.send_json({
+                "error": "No active monitoring for this content"
+            })
+            await websocket.close()
+            return
         
-        # In production, this would:
-        # 1. Analyze current quality issues
-        # 2. Apply automated fixes
-        # 3. Regenerate low-quality sections
-        # 4. Re-run quality checks
-        # 5. Update content in database
-        
-        await asyncio.sleep(5)  # Simulate processing
-        
-        logger.info(f"Quality improvements completed for content {content_id}")
-        
+        # Send monitoring updates
+        while monitoring_tasks[content_id]["active"]:
+            monitor = monitoring_tasks[content_id]
+            
+            # Get latest quality metrics
+            metrics = await qa_agent.continuous_monitor.get_current_metrics(
+                str(content_id)
+            )
+            
+            await websocket.send_json({
+                "type": "quality_update",
+                "data": {
+                    "content_id": str(content_id),
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "metrics": {
+                        "technical_accuracy": metrics.get("technical_accuracy", 0),
+                        "pedagogical_effectiveness": metrics.get("pedagogical_effectiveness", 0),
+                        "accessibility_compliance": metrics.get("accessibility_compliance", 0),
+                        "certification_alignment": metrics.get("certification_alignment", 0)
+                    },
+                    "overall_quality": metrics.get("overall_quality", 0),
+                    "status": "healthy" if metrics.get("overall_quality", 0) >= 0.85 else "degraded"
+                }
+            })
+            
+            await asyncio.sleep(30)  # Send updates every 30 seconds
+            
+    except WebSocketDisconnect:
+        pass
     except Exception as e:
-        logger.error(f"Quality improvement error: {e}")
+        logger.error(f"WebSocket monitoring error: {e}")
+        await websocket.close()
+
+
+async def start_continuous_monitoring(
+    content_id: UUID,
+    config: ContinuousMonitoringConfig,
+    user_id: UUID
+) -> None:
+    """Start continuous monitoring task."""
+    try:
+        while monitoring_tasks.get(content_id, {}).get("active", False):
+            # Run quality check
+            await qa_agent.continuous_monitor.start_monitoring(config)
+            
+            # Update last check time
+            monitoring_tasks[content_id]["last_check"] = datetime.utcnow()
+            
+            # Wait for next check
+            await asyncio.sleep(config.check_interval_minutes * 60)
+            
+    except Exception as e:
+        logger.error(f"Continuous monitoring error: {e}")
+        if content_id in monitoring_tasks:
+            monitoring_tasks[content_id]["active"] = False
+
+
+# Helper function for WebSocket auth
+async def get_ws_user(websocket: WebSocket, token: str = None) -> Optional[User]:
+    """Get user from WebSocket connection."""
+    # In production, implement proper WebSocket authentication
+    return None

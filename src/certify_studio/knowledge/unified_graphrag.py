@@ -22,14 +22,13 @@ from loguru import logger
 
 from ..agents.specialized.domain_extraction.models import (
     Concept, 
-    ConceptRelationship,
-    Procedure,
+    Relationship,
     DomainKnowledge,
     SearchQuery,
     SearchResult
 )
 from ..agents.core import AgentCapability
-from ..multimodal.llm_router import LLMRouter
+from ..core.llm import MultimodalLLM as LLMRouter
 
 
 class UnifiedNodeType(Enum):

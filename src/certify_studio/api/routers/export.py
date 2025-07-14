@@ -2,21 +2,31 @@
 Export router - handles content export in various formats.
 """
 
-import os
 import asyncio
+import os
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from typing import Optional, Dict, Any
 from uuid import UUID, uuid4
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import (
+    APIRouter, Depends, HTTPException, status,
+    BackgroundTasks, Response
+)
 from fastapi.responses import FileResponse, StreamingResponse
 
 from ...core.logging import get_logger
+from ...agents.specialized.content_generation import ContentGenerationAgent
+from ...agents.specialized.content_generation.models import (
+    ExportRequest as ExportRequestModel,
+    ExportFormat,
+    ExportOptions as ExportOptionsModel
+)
+from sqlalchemy.ext.asyncio import AsyncSession
 from ..dependencies import (
-    VerifiedUser,
-    Database,
-    RateLimit,
+    get_current_verified_user,
+    AsyncSession,
+    check_rate_limit,
     get_request_id
 )
 from ..schemas import (
@@ -32,7 +42,7 @@ logger = get_logger(__name__)
 router = APIRouter(
     prefix="/export",
     tags=["export"],
-    dependencies=[Depends(RateLimit)],
+    dependencies=[Depends(check_rate_limit)],
     responses={
         401: {"model": ErrorResponse, "description": "Unauthorized"},
         403: {"model": ErrorResponse, "description": "Forbidden"},
@@ -40,8 +50,12 @@ router = APIRouter(
     }
 )
 
-# Active export tasks
-active_exports: Dict[UUID, Dict[str, Any]] = {}
+# Export tasks
+export_tasks: Dict[UUID, Dict[str, Any]] = {}
+
+# Temporary storage for exports (in production, use cloud storage)
+EXPORT_DIR = Path("/tmp/certify_studio/exports")
+EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @router.post(
@@ -49,55 +63,106 @@ active_exports: Dict[UUID, Dict[str, Any]] = {}
     response_model=ExportResponse,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Export content",
-    description="Export educational content in specified format"
+    description="Export generated content in specified format"
 )
 async def export_content(
     request: ExportRequest,
     background_tasks: BackgroundTasks,
-    current_user: VerifiedUser,
-    db: Database,
+    current_user: get_current_verified_user,
+    db: AsyncSession,
     request_id: str = Depends(get_request_id)
 ) -> ExportResponse:
     """Start content export."""
     try:
-        # Validate content ownership
-        # In production, check database
+        # Verify content ownership
+        # content = await db.get(GeneratedContent, request.content_id)
+        # if not content or content.user_id != current_user.id:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_404_NOT_FOUND,
+        #         detail="Content not found"
+        #     )
+        
+        # For demo, create mock content
+        content = {
+            "id": request.content_id,
+            "title": "AWS Solutions Architect Course",
+            "animations": [],  # Would contain actual animations
+            "diagrams": [],    # Would contain actual diagrams
+            "interactives": [] # Would contain actual interactives
+        }
+        
+        # Map output format to export format
+        format_mapping = {
+            OutputFormat.VIDEO_MP4: ExportFormat.VIDEO,
+            OutputFormat.VIDEO_WEBM: ExportFormat.VIDEO,
+            OutputFormat.INTERACTIVE_HTML: ExportFormat.INTERACTIVE,
+            OutputFormat.SCORM_PACKAGE: ExportFormat.SCORM,
+            OutputFormat.PDF_DOCUMENT: ExportFormat.PDF,
+            OutputFormat.POWERPOINT: ExportFormat.POWERPOINT
+        }
+        
+        export_format = format_mapping.get(
+            request.export_options.format,
+            ExportFormat.VIDEO
+        )
         
         # Create export task
-        export_id = uuid4()
+        task_id = uuid4()
+        export_request = ExportRequestModel(
+            content_id=str(request.content_id),
+            format=export_format,
+            options=ExportOptionsModel(
+                resolution=request.export_options.video_resolution,
+                fps=request.export_options.video_fps,
+                include_captions=request.export_options.include_captions,
+                include_navigation=request.export_options.include_navigation,
+                include_assessments=request.export_options.include_assessments,
+                scorm_version=request.export_options.scorm_version,
+                custom_branding=request.export_options.custom_branding
+            )
+        )
         
-        # Store export info
-        active_exports[export_id] = {
+        # Store task info
+        export_tasks[task_id] = {
             "user_id": current_user.id,
             "content_id": request.content_id,
             "format": request.export_options.format,
-            "status": StatusEnum.PENDING,
-            "progress": 0,
+            "status": StatusEnum.PROCESSING,
             "started_at": datetime.utcnow(),
-            "options": request.export_options.model_dump()
+            "request": export_request
         }
         
         # Start export in background
         background_tasks.add_task(
             run_export,
-            export_id,
-            request.content_id,
-            request.export_options,
-            current_user.id
+            task_id,
+            export_request,
+            content,
+            current_user.id,
+            db
         )
+        
+        # Send webhook notification if provided
+        if request.webhook_url:
+            background_tasks.add_task(
+                send_webhook_notification,
+                str(request.webhook_url),
+                task_id,
+                "started"
+            )
         
         return ExportResponse(
             status=StatusEnum.SUCCESS,
             message="Export started",
-            export_id=export_id,
+            request_id=UUID(request_id),
+            export_id=task_id,
             content_id=request.content_id,
-            export_status=StatusEnum.PENDING,
-            progress=0,
-            started_at=datetime.utcnow(),
-            estimated_completion=datetime.utcnow() + timedelta(minutes=5),
-            request_id=UUID(request_id)
+            format=request.export_options.format,
+            export_status=StatusEnum.PROCESSING
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Export start error: {e}")
         raise HTTPException(
@@ -107,168 +172,161 @@ async def export_content(
 
 
 async def run_export(
-    export_id: UUID,
-    content_id: UUID,
-    options: Any,
-    user_id: UUID
+    task_id: UUID,
+    request: ExportRequestModel,
+    content: Dict[str, Any],
+    user_id: UUID,
+    db: AsyncSession
 ) -> None:
     """Run export in background."""
     try:
-        # Update status
-        active_exports[export_id]["status"] = StatusEnum.PROCESSING
+        # Initialize content generation agent for export functionality
+        content_agent = ContentGenerationAgent()
+        if not content_agent._initialized:
+            await content_agent.initialize()
+        
+        # Perform export
+        # In production, this would use the actual content data
+        output_path = EXPORT_DIR / f"{task_id}.{request.format.value}"
         
         # Simulate export process
-        for progress in [25, 50, 75, 100]:
-            await asyncio.sleep(2)
-            active_exports[export_id]["progress"] = progress
+        await asyncio.sleep(5)  # Simulate processing time
         
-        # Generate export file
-        output_format = options.format
-        if output_format == OutputFormat.VIDEO_MP4:
-            file_path = f"/exports/{export_id}.mp4"
-            file_size = 104857600  # 100MB
-        elif output_format == OutputFormat.INTERACTIVE_HTML:
-            file_path = f"/exports/{export_id}.html"
-            file_size = 5242880  # 5MB
-        elif output_format == OutputFormat.SCORM_PACKAGE:
-            file_path = f"/exports/{export_id}.zip"
-            file_size = 20971520  # 20MB
-        elif output_format == OutputFormat.PDF_DOCUMENT:
-            file_path = f"/exports/{export_id}.pdf"
-            file_size = 10485760  # 10MB
-        else:
-            file_path = f"/exports/{export_id}.pptx"
-            file_size = 15728640  # 15MB
+        # Create a sample file
+        with open(output_path, "wb") as f:
+            if request.format == ExportFormat.VIDEO:
+                f.write(b"Sample video content")
+            elif request.format == ExportFormat.PDF:
+                f.write(b"Sample PDF content")
+            else:
+                f.write(b"Sample export content")
         
-        # Update export info
-        active_exports[export_id].update({
+        file_size = output_path.stat().st_size
+        
+        # Update task
+        export_tasks[task_id].update({
             "status": StatusEnum.COMPLETED,
-            "progress": 100,
             "completed_at": datetime.utcnow(),
-            "file_path": file_path,
+            "output_path": str(output_path),
             "file_size": file_size,
-            "download_url": f"/api/export/download/{export_id}",
-            "expires_at": datetime.utcnow() + timedelta(days=7)
+            "expires_at": datetime.utcnow() + timedelta(hours=24)  # 24 hour expiry
         })
         
-        # Send notification if configured
-        if options.webhook_url:
-            # await send_webhook_notification(options.webhook_url, export_id)
-            pass
+        # Update user storage usage
+        # await db.execute(
+        #     update(User).where(User.id == user_id).values(
+        #         total_storage_mb=User.total_storage_mb + (file_size / 1024 / 1024)
+        #     )
+        # )
+        # await db.commit()
         
-        if options.email_notification:
-            # await send_email_notification(options.email_notification, export_id)
-            pass
-            
     except Exception as e:
-        logger.error(f"Export error for {export_id}: {e}")
-        active_exports[export_id].update({
+        logger.error(f"Export error for task {task_id}: {e}")
+        export_tasks[task_id].update({
             "status": StatusEnum.FAILED,
             "error": str(e)
         })
 
 
 @router.get(
-    "/status/{export_id}",
+    "/{task_id}/status",
     response_model=ExportResponse,
     summary="Get export status",
     description="Get the status of an export task"
 )
 async def get_export_status(
-    export_id: UUID,
-    current_user: VerifiedUser
+    task_id: UUID,
+    current_user: get_current_verified_user,
+    request_id: str = Depends(get_request_id)
 ) -> ExportResponse:
-    """Get export status."""
-    if export_id not in active_exports:
+    """Get export task status."""
+    if task_id not in export_tasks:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Export not found"
+            detail="Export task not found"
         )
     
-    export_data = active_exports[export_id]
+    task = export_tasks[task_id]
     
     # Check ownership
-    if export_data["user_id"] != current_user.id:
+    if task["user_id"] != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
         )
     
+    # Build response
     response = ExportResponse(
         status=StatusEnum.SUCCESS,
-        message="Status retrieved",
-        export_id=export_id,
-        content_id=export_data["content_id"],
-        export_status=export_data["status"],
-        progress=export_data["progress"],
-        started_at=export_data["started_at"]
+        message="Export status retrieved",
+        request_id=UUID(request_id),
+        export_id=task_id,
+        content_id=task["content_id"],
+        format=task["format"],
+        export_status=task["status"]
     )
     
-    # Add completion data if available
-    if export_data["status"] == StatusEnum.COMPLETED:
-        response.completed_at = export_data["completed_at"]
-        response.download_url = export_data["download_url"]
-        response.file_size_bytes = export_data["file_size"]
-        response.expires_at = export_data["expires_at"]
-    elif export_data["status"] == StatusEnum.PROCESSING:
-        # Estimate completion
-        elapsed = (datetime.utcnow() - export_data["started_at"]).total_seconds()
-        if export_data["progress"] > 0:
-            total_estimate = elapsed / (export_data["progress"] / 100)
-            remaining = total_estimate - elapsed
-            response.estimated_completion = datetime.utcnow() + timedelta(seconds=remaining)
+    if task["status"] == StatusEnum.COMPLETED:
+        response.download_url = f"/api/export/{task_id}/download"
+        response.file_size_bytes = task["file_size"]
+        response.expires_at = task["expires_at"]
+        response.metadata = {
+            "duration": (task["completed_at"] - task["started_at"]).total_seconds(),
+            "format": task["format"].value
+        }
     
     return response
 
 
 @router.get(
-    "/download/{export_id}",
+    "/{task_id}/download",
     summary="Download exported content",
     description="Download the exported content file"
 )
 async def download_export(
-    export_id: UUID,
-    current_user: VerifiedUser
-) -> FileResponse:
-    """Download exported file."""
-    if export_id not in active_exports:
+    task_id: UUID,
+    current_user: get_current_verified_user
+):
+    """Download exported content."""
+    if task_id not in export_tasks:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Export not found"
         )
     
-    export_data = active_exports[export_id]
+    task = export_tasks[task_id]
     
     # Check ownership
-    if export_data["user_id"] != current_user.id:
+    if task["user_id"] != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
         )
     
     # Check if completed
-    if export_data["status"] != StatusEnum.COMPLETED:
+    if task["status"] != StatusEnum.COMPLETED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Export is {export_data['status']}"
+            detail="Export not completed"
         )
     
-    # Check expiration
-    if datetime.utcnow() > export_data["expires_at"]:
+    # Check if expired
+    if datetime.utcnow() > task["expires_at"]:
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
             detail="Export has expired"
         )
     
     # Get file path
-    file_path = export_data["file_path"]
-    
-    # In production, this would serve the actual file
-    # For now, create a dummy file
-    dummy_content = b"This is dummy export content"
+    file_path = Path(task["output_path"])
+    if not file_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Export file not found"
+        )
     
     # Determine content type
-    format_to_content_type = {
+    content_type_mapping = {
         OutputFormat.VIDEO_MP4: "video/mp4",
         OutputFormat.VIDEO_WEBM: "video/webm",
         OutputFormat.INTERACTIVE_HTML: "text/html",
@@ -277,218 +335,271 @@ async def download_export(
         OutputFormat.POWERPOINT: "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     }
     
-    content_type = format_to_content_type.get(
-        export_data["format"],
+    content_type = content_type_mapping.get(
+        task["format"],
         "application/octet-stream"
     )
     
     # Generate filename
-    filename = f"content_{export_data['content_id']}.{export_data['format'].value.split('/')[-1]}"
+    filename = f"export_{task_id}.{file_path.suffix}"
     
-    # Return file response
     return FileResponse(
         path=file_path,
         media_type=content_type,
         filename=filename,
         headers={
-            "Content-Disposition": f"attachment; filename={filename}",
-            "X-Export-ID": str(export_id),
-            "X-Expires-At": export_data["expires_at"].isoformat()
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-cache"
         }
+    )
+
+
+@router.get(
+    "/{task_id}/stream",
+    summary="Stream exported content",
+    description="Stream exported video content"
+)
+async def stream_export(
+    task_id: UUID,
+    current_user: get_current_verified_user,
+    range: Optional[str] = None
+):
+    """Stream exported video content."""
+    if task_id not in export_tasks:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Export not found"
+        )
+    
+    task = export_tasks[task_id]
+    
+    # Check ownership
+    if task["user_id"] != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    
+    # Check if video format
+    if task["format"] not in [OutputFormat.VIDEO_MP4, OutputFormat.VIDEO_WEBM]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Streaming only available for video formats"
+        )
+    
+    # Get file path
+    file_path = Path(task["output_path"])
+    if not file_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Export file not found"
+        )
+    
+    file_size = file_path.stat().st_size
+    
+    # Handle range requests for video streaming
+    if range:
+        # Parse range header
+        range_start = 0
+        range_end = file_size - 1
+        
+        if range.startswith("bytes="):
+            range_spec = range[6:]
+            parts = range_spec.split("-")
+            if parts[0]:
+                range_start = int(parts[0])
+            if parts[1]:
+                range_end = int(parts[1])
+        
+        # Read requested range
+        async def iterfile():
+            async with aiofiles.open(file_path, "rb") as f:
+                await f.seek(range_start)
+                chunk_size = 8192
+                current = range_start
+                
+                while current <= range_end:
+                    remaining = range_end - current + 1
+                    read_size = min(chunk_size, remaining)
+                    data = await f.read(read_size)
+                    if not data:
+                        break
+                    current += len(data)
+                    yield data
+        
+        headers = {
+            "Content-Range": f"bytes {range_start}-{range_end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(range_end - range_start + 1),
+            "Content-Type": "video/mp4" if task["format"] == OutputFormat.VIDEO_MP4 else "video/webm"
+        }
+        
+        return StreamingResponse(
+            iterfile(),
+            status_code=206,
+            headers=headers
+        )
+    
+    else:
+        # Stream entire file
+        async def iterfile():
+            async with aiofiles.open(file_path, "rb") as f:
+                chunk_size = 8192
+                while True:
+                    data = await f.read(chunk_size)
+                    if not data:
+                        break
+                    yield data
+        
+        return StreamingResponse(
+            iterfile(),
+            media_type="video/mp4" if task["format"] == OutputFormat.VIDEO_MP4 else "video/webm",
+            headers={
+                "Content-Length": str(file_size),
+                "Accept-Ranges": "bytes"
+            }
+        )
+
+
+@router.delete(
+    "/{task_id}",
+    response_model=BaseResponse,
+    summary="Delete export",
+    description="Delete exported content to free up space"
+)
+async def delete_export(
+    task_id: UUID,
+    current_user: get_current_verified_user,
+    db: AsyncSession,
+    request_id: str = Depends(get_request_id)
+) -> BaseResponse:
+    """Delete exported content."""
+    if task_id not in export_tasks:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Export not found"
+        )
+    
+    task = export_tasks[task_id]
+    
+    # Check ownership
+    if task["user_id"] != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    
+    # Delete file if exists
+    if "output_path" in task:
+        file_path = Path(task["output_path"])
+        if file_path.exists():
+            file_size = file_path.stat().st_size
+            file_path.unlink()
+            
+            # Update user storage
+            # await db.execute(
+            #     update(User).where(User.id == current_user.id).values(
+            #         total_storage_mb=User.total_storage_mb - (file_size / 1024 / 1024)
+            #     )
+            # )
+            # await db.commit()
+    
+    # Remove from tasks
+    del export_tasks[task_id]
+    
+    return BaseResponse(
+        status=StatusEnum.SUCCESS,
+        message="Export deleted successfully",
+        request_id=UUID(request_id)
     )
 
 
 @router.get(
     "/formats",
     response_model=Dict[str, Any],
-    summary="Get supported formats",
-    description="Get list of supported export formats with details"
+    summary="Get supported export formats",
+    description="Get list of supported export formats with their options"
 )
-async def get_export_formats(
-    current_user: VerifiedUser
-) -> Dict[str, Any]:
+async def get_export_formats() -> Dict[str, Any]:
     """Get supported export formats."""
     return {
-        "status": "success",
         "formats": [
             {
                 "format": OutputFormat.VIDEO_MP4.value,
                 "name": "MP4 Video",
-                "description": "High-quality video with animations and narration",
-                "file_extension": ".mp4",
-                "features": ["animations", "narration", "subtitles"],
-                "typical_size_mb": "50-200",
-                "processing_time_minutes": "10-30"
+                "description": "Standard video format compatible with most devices",
+                "options": {
+                    "resolutions": ["1920x1080", "1280x720", "854x480"],
+                    "fps": [24, 30, 60],
+                    "bitrates": ["2M", "5M", "10M"]
+                }
+            },
+            {
+                "format": OutputFormat.VIDEO_WEBM.value,
+                "name": "WebM Video",
+                "description": "Open format optimized for web streaming",
+                "options": {
+                    "resolutions": ["1920x1080", "1280x720"],
+                    "fps": [24, 30],
+                    "bitrates": ["2M", "5M"]
+                }
             },
             {
                 "format": OutputFormat.INTERACTIVE_HTML.value,
                 "name": "Interactive HTML",
                 "description": "Web-based interactive learning experience",
-                "file_extension": ".html",
-                "features": ["interactivity", "quizzes", "progress_tracking"],
-                "typical_size_mb": "5-20",
-                "processing_time_minutes": "5-15"
+                "options": {
+                    "navigation": True,
+                    "progress_tracking": True,
+                    "assessments": True
+                }
             },
             {
                 "format": OutputFormat.SCORM_PACKAGE.value,
                 "name": "SCORM Package",
-                "description": "LMS-compatible learning package",
-                "file_extension": ".zip",
-                "features": ["lms_compatible", "tracking", "grading"],
-                "typical_size_mb": "10-50",
-                "processing_time_minutes": "5-20"
+                "description": "LMS-compatible package for tracking and reporting",
+                "options": {
+                    "versions": ["1.2", "2004"],
+                    "mastery_score": [60, 70, 80, 90, 100]
+                }
             },
             {
                 "format": OutputFormat.PDF_DOCUMENT.value,
                 "name": "PDF Document",
-                "description": "Printable study guide with visuals",
-                "file_extension": ".pdf",
-                "features": ["printable", "offline", "searchable"],
-                "typical_size_mb": "5-30",
-                "processing_time_minutes": "3-10"
+                "description": "Printable document with all content",
+                "options": {
+                    "layouts": ["portrait", "landscape"],
+                    "include_toc": True,
+                    "include_glossary": True
+                }
             },
             {
                 "format": OutputFormat.POWERPOINT.value,
                 "name": "PowerPoint Presentation",
                 "description": "Editable presentation slides",
-                "file_extension": ".pptx",
-                "features": ["editable", "presenter_notes", "animations"],
-                "typical_size_mb": "10-40",
-                "processing_time_minutes": "5-15"
+                "options": {
+                    "templates": ["modern", "classic", "minimal"],
+                    "include_notes": True
+                }
             }
         ]
     }
 
 
-@router.post(
-    "/batch",
-    response_model=Dict[str, Any],
-    summary="Batch export",
-    description="Export content in multiple formats simultaneously"
-)
-async def batch_export(
-    content_id: UUID,
-    formats: List[OutputFormat],
-    background_tasks: BackgroundTasks,
-    current_user: VerifiedUser,
-    webhook_url: Optional[str] = None
-) -> Dict[str, Any]:
-    """Start batch export."""
+async def send_webhook_notification(
+    webhook_url: str,
+    task_id: UUID,
+    event: str
+) -> None:
+    """Send webhook notification."""
     try:
-        if len(formats) < 1 or len(formats) > 5:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Please specify 1-5 export formats"
-            )
-        
-        # Create batch export
-        batch_id = uuid4()
-        export_ids = []
-        
-        for format in formats:
-            export_id = uuid4()
-            export_ids.append(export_id)
-            
-            # Create export request
-            export_request = ExportRequest(
-                content_id=content_id,
-                export_options={
-                    "format": format,
-                    "quality": "standard",
-                    "include_subtitles": True,
-                    "include_interactivity": True
-                }
-            )
-            
-            # Store export info
-            active_exports[export_id] = {
-                "user_id": current_user.id,
-                "content_id": content_id,
-                "format": format,
-                "status": StatusEnum.PENDING,
-                "progress": 0,
-                "started_at": datetime.utcnow(),
-                "batch_id": batch_id
-            }
-            
-            # Start export
-            background_tasks.add_task(
-                run_export,
-                export_id,
-                content_id,
-                export_request.export_options,
-                current_user.id
-            )
-        
-        return {
-            "status": "success",
-            "message": "Batch export started",
-            "batch_id": str(batch_id),
-            "export_ids": [str(eid) for eid in export_ids],
-            "formats": [f.value for f in formats],
-            "estimated_completion_minutes": len(formats) * 10
-        }
-        
-    except HTTPException:
-        raise
+        # In production, implement actual webhook sending
+        logger.info(f"Would send webhook to {webhook_url} for task {task_id} event {event}")
     except Exception as e:
-        logger.error(f"Batch export error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to start batch export"
-        )
+        logger.error(f"Webhook error: {e}")
 
 
-@router.get(
-    "/history",
-    response_model=Dict[str, Any],
-    summary="Export history",
-    description="Get user's export history"
-)
-async def get_export_history(
-    current_user: VerifiedUser,
-    limit: int = 20,
-    offset: int = 0
-) -> Dict[str, Any]:
-    """Get export history."""
-    try:
-        # Filter exports for current user
-        user_exports = [
-            export_data
-            for export_id, export_data in active_exports.items()
-            if export_data["user_id"] == current_user.id
-        ]
-        
-        # Sort by date
-        user_exports.sort(key=lambda x: x["started_at"], reverse=True)
-        
-        # Paginate
-        paginated = user_exports[offset:offset + limit]
-        
-        return {
-            "status": "success",
-            "total": len(user_exports),
-            "limit": limit,
-            "offset": offset,
-            "exports": [
-                {
-                    "export_id": str(export_id),
-                    "content_id": str(export["content_id"]),
-                    "format": export["format"].value,
-                    "status": export["status"],
-                    "started_at": export["started_at"],
-                    "completed_at": export.get("completed_at"),
-                    "file_size_bytes": export.get("file_size"),
-                    "expires_at": export.get("expires_at")
-                }
-                for export_id, export in active_exports.items()
-                if export["user_id"] == current_user.id
-            ][offset:offset + limit]
-        }
-        
-    except Exception as e:
-        logger.error(f"Export history error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve export history"
-        )
+# Import required modules
+import aiofiles
+from ...api.schemas import BaseResponse, FeedbackResponse
+from ...agents.specialized.quality_assurance.models import User

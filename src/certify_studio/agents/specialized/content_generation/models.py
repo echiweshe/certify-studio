@@ -8,6 +8,17 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 
+class MediaType(Enum):
+    """Types of media content."""
+    IMAGE = "image"
+    VIDEO = "video"
+    AUDIO = "audio"
+    DOCUMENT = "document"
+    ANIMATION = "animation"
+    INTERACTIVE = "interactive"
+    THREE_D = "3d"
+
+
 class ContentType(Enum):
     """Types of educational content."""
     DIAGRAM = "diagram"
@@ -64,6 +75,72 @@ class VisualStyle(Enum):
     PLAYFUL = "playful"
     DARK_MODE = "dark_mode"
     HIGH_CONTRAST = "high_contrast"
+
+
+@dataclass
+class DiagramElement:
+    """Element in a diagram."""
+    id: str
+    type: str  # node, edge, group, annotation
+    label: str
+    position: Optional[Tuple[float, float]] = None
+    size: Optional[Tuple[float, float]] = None
+    style: Dict[str, Any] = field(default_factory=dict)
+    properties: Dict[str, Any] = field(default_factory=dict)
+    connections: List[str] = field(default_factory=list)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "type": self.type,
+            "label": self.label,
+            "position": self.position,
+            "size": self.size,
+            "style": self.style,
+            "properties": self.properties,
+            "connections": self.connections
+        }
+
+
+@dataclass
+class ContentMetadata:
+    """Metadata for generated content."""
+    id: str = field(default_factory=lambda: str(datetime.now().timestamp()))
+    title: str = ""
+    description: str = ""
+    tags: List[str] = field(default_factory=list)
+    keywords: List[str] = field(default_factory=list)
+    author: str = "Certify Studio"
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
+    version: str = "1.0.0"
+    license: str = "Educational Use"
+    language: str = "en"
+    duration_seconds: Optional[int] = None
+    file_size_bytes: Optional[int] = None
+    dimensions: Optional[Tuple[int, int]] = None
+    format: Optional[str] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "title": self.title,
+            "description": self.description,
+            "tags": self.tags,
+            "keywords": self.keywords,
+            "author": self.author,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+            "version": self.version,
+            "license": self.license,
+            "language": self.language,
+            "duration_seconds": self.duration_seconds,
+            "file_size_bytes": self.file_size_bytes,
+            "dimensions": self.dimensions,
+            "format": self.format
+        }
 
 
 @dataclass

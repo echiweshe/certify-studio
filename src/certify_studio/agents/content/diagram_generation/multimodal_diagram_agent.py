@@ -13,10 +13,8 @@ from ....core.llm import MultimodalLLM, LLMProvider, PromptManager, PromptType
 from ....core.llm.multimodal_llm import MultimodalMessage, MultimodalResponse
 from ....core.logging import get_logger
 from ...certification.domain_extraction_agent import Concept
-from .diagram_generation import (
-    DiagramGenerationAgent as BaseDiagramAgent,
-    DiagramType, Diagram, DiagramElement, DiagramEdge
-)
+from .agent import DiagramGenerationAgent as BaseDiagramAgent
+from .models import DiagramType, Diagram, DiagramElement, DiagramEdge
 
 logger = get_logger(__name__)
 

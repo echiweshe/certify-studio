@@ -25,7 +25,7 @@ from .models import (
     ConceptCluster,
     DomainCategory
 )
-from ....core.llm import MultiModalLLM
+from ....core.llm import MultimodalLLM
 from ....config import settings
 
 
@@ -33,7 +33,7 @@ class RelationshipMapper:
     """Map relationships between extracted concepts."""
     
     def __init__(self):
-        self.llm = MultiModalLLM()
+        self.llm = MultimodalLLM()
         self._sentence_transformer = None
         self._concept_embeddings = {}
         

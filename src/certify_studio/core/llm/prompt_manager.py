@@ -505,7 +505,7 @@ Provide your assessment:
         template_vars = {
             "content": text_content,
             "image_count": len(images) if images else 0,
-            **context if context else {}
+            **(context if context else {})
         }
         
         prompt = self.get_prompt(prompt_type, template_vars)

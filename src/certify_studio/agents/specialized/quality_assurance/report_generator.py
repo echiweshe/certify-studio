@@ -24,13 +24,14 @@ from .models import (
     ValidationReport,
     QualityMetrics,
     QualityDimension,
+    QualityScore,
     ValidationIssue,
     SeverityLevel,
     ImprovementSuggestion,
     CertificationAlignment,
     PerformanceMetrics
 )
-from ....core.config import Config
+from ....core.config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ logger = logging.getLogger(__name__)
 class ReportGenerator:
     """Generates various quality assurance reports."""
     
-    def __init__(self, config: Config):
+    def __init__(self, config: Settings):
         """Initialize the report generator."""
         self.config = config
         self.report_templates = self._load_report_templates()
@@ -784,7 +785,7 @@ class VisualizationEngine:
         
     async def _create_dimension_scores_chart(
         self,
-        dimension_scores: Dict[QualityDimension, QualityScore]
+        dimension_scores: Dict[QualityDimension, 'QualityScore']
     ) -> str:
         """Create bar chart of dimension scores."""
         fig, ax = plt.subplots(figsize=(10, 6))

@@ -28,8 +28,8 @@ from .models import (
     DiagramElement,
     AnimationSequence
 )
-from ....core.llm import MultiModalLLM
-from ....core.vision import VisionProcessor
+from ....core.llm import MultimodalLLM
+from ....core.llm.vision_processor import VisionProcessor
 from ....config import settings
 
 
@@ -101,7 +101,7 @@ class StyleManager:
     """Manages visual consistency across all content."""
     
     def __init__(self):
-        self.llm = MultiModalLLM()
+        self.llm = MultimodalLLM()
         self.vision_processor = VisionProcessor()
         self._style_cache = {}
         self._domain_styles = self._load_domain_styles()
