@@ -396,3 +396,149 @@ The modular approach has proven highly effective:
 - Learning path generation
 - Integration with existing RAG system
 - Foundation for all other agents to build upon
+
+## 🚀 MAJOR UPDATE: GraphRAG Implementation Complete!
+
+### 🎯 GraphRAG for Customer Support Troubleshooting
+
+We've successfully implemented a full GraphRAG (Graph-based Retrieval-Augmented Generation) system that complements our educational content with real-world troubleshooting capabilities!
+
+#### What We Built:
+
+1. **Neo4j Graph Store** (`graph_store.py`)
+   - Vector indexes for semantic search
+   - Graph traversal for diagnostic reasoning
+   - Hybrid ranking (vector + graph + context)
+   - Full CRUD operations for issues, causes, and solutions
+
+2. **Troubleshooting Engine** (`troubleshooting_engine.py`)
+   - Natural language issue diagnosis
+   - Multi-step reasoning paths
+   - Root cause analysis
+   - Solution recommendation with confidence scores
+
+3. **Knowledge Integration** (`knowledge_integration.py`)
+   - Bridges educational content with troubleshooting
+   - Imports issues from domain extraction
+   - Maintains learning context during problem-solving
+
+4. **Integrated Lesson Generator** (`integrated_lesson_generator.py`)
+   - Combines Domain Extraction + GraphRAG
+   - Follows pedagogical continuum (6 sections)
+   - Generates complete lessons with troubleshooting scenarios
+   - Exports to multiple formats
+
+#### Key Features:
+
+- **True GraphRAG**: Not just RAG with a graph database, but integrated vector + graph search
+- **Diagnostic Paths**: Traverses issue → cause → solution relationships
+- **Learning Integration**: Links troubleshooting back to educational concepts
+- **Production Ready**: Full error handling, logging, and performance optimization
+- **Scalable**: Designed for millions of nodes and relationships
+
+#### Architecture Benefits:
+
+1. **For Certifications**: Current Domain Extraction + RAG is perfect
+2. **For Troubleshooting**: GraphRAG enables complex diagnostic reasoning
+3. **Unified Platform**: Students learn theory AND practical troubleshooting
+
+#### Usage Example:
+```python
+# Diagnose an issue
+result = await troubleshooter.diagnose(
+    "EC2 instance can't connect to RDS",
+    context={"student_level": "intermediate"}
+)
+
+# Get diagnostic path
+for path in result.diagnostic_paths:
+    print(f"Confidence: {path.confidence}")
+    for step in path.get_readable_path():
+        print(f"  → {step}")
+```
+
+#### Total GraphRAG Implementation:
+- Files: 7 core modules + examples
+- Lines of code: ~4,500+
+- Features: Complete GraphRAG with all capabilities
+- Integration: Seamless with existing architecture
+
+## 🔄 ARCHITECTURAL IMPROVEMENT: Unified GraphRAG System
+
+### 🎯 One System to Rule Them All
+
+After careful consideration of the IMMUTABLE VISION, we've implemented a **Unified GraphRAG** system that replaces the separate RAG and troubleshooting systems with ONE cohesive architecture.
+
+#### What Changed:
+
+**BEFORE** (Technical Debt):
+- Domain Extraction → ChromaDB (for education)
+- Separate GraphRAG → Neo4j (for troubleshooting)  
+- Two systems = complexity and maintenance burden
+
+**AFTER** (Unified Architecture):
+- Domain Extraction → Unified GraphRAG (for EVERYTHING)
+- One Neo4j-based system with vector + graph capabilities
+- Educational content and troubleshooting in the SAME graph
+
+#### Key Components:
+
+1. **Unified GraphRAG** (`knowledge/unified_graphrag.py`)
+   - Single system for ALL knowledge operations
+   - Handles educational, troubleshooting, and general queries
+   - Vector search + graph traversal in one place
+
+2. **Migration Support** (`knowledge/migration.py`)
+   - Smooth transition for existing deployments
+   - Backward compatibility during migration
+   - Data import from legacy systems
+
+3. **Unified Node/Edge Types**
+   - Educational: Concept, Procedure, LearningObjective
+   - Troubleshooting: Issue, Cause, Solution
+   - All in ONE graph, interconnected!
+
+#### Benefits:
+
+1. **Follows IMMUTABLE VISION**: "One AI Agent Operating System"
+2. **Reduced Complexity**: One system instead of two
+3. **Better Knowledge Integration**: Concepts linked to issues/solutions
+4. **Easier Maintenance**: Single codebase, consistent patterns
+5. **Performance**: One query can traverse educational + troubleshooting
+
+#### Usage Example:
+```python
+# ONE system for everything
+from certify_studio.knowledge import UnifiedGraphRAG, GraphRAGQuery
+
+# Educational query
+edu_result = await graphrag.search(GraphRAGQuery(
+    query_text="How does VPC work?",
+    query_type="educational"
+))
+
+# Troubleshooting query - SAME system!
+trouble_result = await graphrag.search(GraphRAGQuery(
+    query_text="EC2 can't connect to RDS",
+    query_type="troubleshooting"  
+))
+
+# General query finds BOTH types
+general_result = await graphrag.search(GraphRAGQuery(
+    query_text="security groups",
+    query_type="general"
+))
+```
+
+#### Migration Path:
+```python
+# For existing deployments
+from certify_studio.knowledge.migration import migrate_to_unified_system
+unified = await migrate_to_unified_system()
+
+# For new deployments  
+from certify_studio.knowledge.migration import create_unified_system
+graphrag, domain_agent = await create_unified_system()
+```
+
+**This is the right architecture** - one unified system that grows smarter over time, not multiple systems that drift apart.

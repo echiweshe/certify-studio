@@ -6,17 +6,33 @@ Certify Studio automatically generates enterprise-grade certification training c
 
 ## 🏆 Recent Achievements
 
-### Modular Agent Architecture
-- **Pedagogical Reasoning Agent**: Complete implementation with 8 specialized modules
+### Unified GraphRAG Architecture
+- **ONE Knowledge System**: Unified GraphRAG replaces separate RAG and troubleshooting systems
+  - Educational content and troubleshooting knowledge in the same graph
+  - Neo4j with vector embeddings for intelligent search
+  - Graph relationships enable connected reasoning
+  - True GraphRAG power: leverages relationships between ALL knowledge types
+
+### Complete Agent Implementation (4/4 Specialized Agents)
+- **Pedagogical Reasoning Agent**: Complete with 8 modules
   - Learning path optimization with cognitive load management
   - Personalized content adaptation based on learner profiles
   - Assessment generation with multiple question types
-  - Learning strategy recommendations
-
-- **Content Generation Agent**: Core modules implemented
+  
+- **Content Generation Agent**: Complete with 8 modules
   - AI-powered diagram generation with multiple layout algorithms
   - Animation choreography engine with Manim integration
-  - Comprehensive data models for all content types
+  - Style management and accessibility compliance
+  
+- **Domain Extraction Agent**: Complete with 8 modules
+  - Intelligent concept extraction from documents
+  - Relationship mapping and knowledge graph building
+  - Seamlessly integrates with Unified GraphRAG
+  
+- **Quality Assurance Agent**: Complete with 9 modules
+  - Multi-method technical validation
+  - Certification alignment checking
+  - Performance monitoring and optimization
 
 ### Production-Ready Features
 - **No mocks or placeholders** - Full implementations throughout
@@ -35,8 +51,15 @@ Certify Studio automatically generates enterprise-grade certification training c
 
 ## 🏗️ Architecture
 
+### Unified Knowledge System (GraphRAG)
+- **Neo4j Graph Database**: Single source of truth for ALL knowledge
+- **Vector Embeddings**: Semantic search across concepts and issues
+- **Graph Relationships**: Connect educational content to real-world troubleshooting
+- **Intelligent Retrieval**: Combines vector similarity with graph traversal
+
 ### Backend (Python/FastAPI)
-- **Multi-Agent System**: Specialized AI agents for content generation
+- **Multi-Agent System**: 4 specialized AI agents working in harmony
+- **BDI Architecture**: Agents with beliefs, desires, and intentions
 - **Manim Extensions**: Enhanced animation framework for technical content
 - **Official Provider Assets**: AWS/Azure/GCP icon libraries
 - **Quality Orchestration**: Consensus-based validation pipeline
@@ -50,9 +73,10 @@ Certify Studio automatically generates enterprise-grade certification training c
 ## 🛠️ Technology Stack
 
 - **Backend**: FastAPI, SQLAlchemy, Alembic, Redis, Celery
-- **AI/ML**: LangChain, AWS Bedrock, OpenAI, Anthropic
+- **AI/ML**: LangChain, OpenAI, Anthropic, Custom BDI Agent Framework
+- **Knowledge System**: Neo4j (Unified GraphRAG), Vector Embeddings
 - **Animation**: Manim, Python Diagrams, SVG, Lottie
-- **Database**: PostgreSQL, Redis
+- **Database**: PostgreSQL (app data), Neo4j (knowledge graph), Redis (cache)
 - **Cloud**: AWS, Azure, GCP integrations
 - **Frontend**: React, TypeScript, Vite, Tailwind CSS
 - **DevOps**: Docker, Kubernetes, GitHub Actions
@@ -63,6 +87,7 @@ Certify Studio automatically generates enterprise-grade certification training c
 - Python 3.11+
 - Node.js 18+
 - Docker & Docker Compose
+- Neo4j 5.x (with vector index support)
 - Poetry
 - FFmpeg (for video generation)
 - Graphviz (for diagram rendering)
@@ -96,7 +121,15 @@ cp .env.example .env
 
 5. **Start Services**
 ```bash
-docker-compose up -d  # Database, Redis, etc.
+# Start Neo4j
+docker run -d \
+    --name neo4j \
+    -p 7474:7474 -p 7687:7687 \
+    -e NEO4J_AUTH=neo4j/certify-studio-2024 \
+    neo4j:5.x
+
+# Start other services
+docker-compose up -d  # PostgreSQL, Redis, etc.
 make dev              # Start backend and frontend
 ```
 
