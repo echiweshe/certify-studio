@@ -42,8 +42,16 @@ def test_backend_connectivity():
         print(f"\n✓ API Info endpoint: {response.status_code}")
         if response.status_code == 200:
             data = response.json()
-            print(f"  Platform: {data.get('platform', {}).get('name', 'unknown')}")
-            print(f"  Agents: {data.get('agents', {}).get('status', 'unknown')}")
+            if isinstance(data, dict):
+                print(f"  Platform: {data.get('platform', {}).get('name', 'unknown')}")
+                print(f"  Agents: {data.get('agents', {}).get('status', 'unknown')}")
+            elif isinstance(data, list):
+                print(f"  Response is a list with {len(data)} items")
+                if data:
+                    print(f"  First item: {data[0]}")
+            else:
+                print(f"  Response type: {type(data)}")
+                print(f"  Response: {data}")
     except Exception as e:
         print(f"✗ API Info endpoint failed: {e}")
         

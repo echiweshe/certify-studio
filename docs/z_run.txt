@@ -68,10 +68,21 @@ uv pip install -e .
 # Step 7: Run tests using uv run
 uv run pytest -v -m unit
 
+
+uv run pytest tests/unit/test_simple.py -vSS
+
 ----------------------------------------
 
 Option 4: Trace all imports (comprehensive)
 bashuv run python trace_imports.py
+
+-------------------------------------------------
+
+cd C:\ZBDuo_Share\Labs\src\BttlnsCldMCP\certify-studio
+uv run uvicorn certify_studio.main:app --reload
+
+
+uv run pytest tests/test_comprehensive.py::TestImports::test_api_imports -v
 
 
 
