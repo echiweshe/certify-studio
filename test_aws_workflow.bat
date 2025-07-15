@@ -1,32 +1,34 @@
 @echo off
-echo ===============================================
-echo    Certify Studio - Test Workflow
-echo ===============================================
+echo ========================================
+echo Running AWS AI Practitioner Workflow Test
+echo ========================================
 echo.
 
-REM Navigate to project root
-cd /d "%~dp0"
+cd /d C:\ZBDuo_Share\Labs\src\BttlnsCldMCP\certify-studio
 
-echo Step 1: Testing Backend Connectivity
-echo ------------------------------------
-python tests\test_backend_connectivity.py
+echo Checking backend connectivity...
+uv run python tests\test_backend_connectivity.py
+
+if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo [ERROR] Backend is not running!
+    echo Please start the backend first:
+    echo   uv run uvicorn certify_studio.main:app --reload
+    echo.
+    pause
+    exit /b 1
+)
 
 echo.
-echo Step 2: Running AWS AI Practitioner Test
-echo ----------------------------------------
+echo Running AWS AI Practitioner E2E Test...
+echo This will test the complete workflow with real AWS materials.
 echo.
 
-REM Run the AWS specific test using uv
-uv run python tests\run_comprehensive_tests.py --aws
+uv run pytest tests\e2e\test_aws_ai_practitioner_complete.py -v -s
 
 echo.
-echo ===============================================
-echo    Test workflow completed!
-echo ===============================================
-echo.
-echo Next steps:
-echo 1. Start backend if not running: uv run uvicorn certify_studio.main:app --reload
-echo 2. Run full test suite: run_comprehensive_tests.bat
-echo 3. Start frontend: cd frontend ^&^& npm run dev
-echo.
+echo ========================================
+echo Test Complete!
+echo Check tests\outputs\aws-ai-practitioner\ for generated content
+echo ========================================
 pause

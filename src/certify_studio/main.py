@@ -28,6 +28,7 @@ from .api.middleware import (
 from .database.connection import database_manager
 from .integrations.observability.logging import setup_logging
 from .integrations.observability.metrics import setup_metrics
+from .frontend_connector import setup_frontend_connector
 # Setup observability
 try:
     from .integrations.observability.tracing import setup_tracing
@@ -159,6 +160,9 @@ def create_application() -> FastAPI:
     
     # Include API routes
     app.include_router(api_router, prefix="/api")
+    
+    # Setup frontend connector for real-time updates
+    app = setup_frontend_connector(app)
     
     # Root endpoint
     @app.get("/")

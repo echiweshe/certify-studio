@@ -1,425 +1,434 @@
 """
-Frontend-Backend Real-time Data Connector
-This module handles real-time data synchronization between the backend agents and frontend
+Frontend Connector for Real-Time Agent Data
+
+This module provides WebSocket and REST endpoints for the frontend to receive
+real-time updates about agent activities, collaboration events, and system state.
 """
 
 import asyncio
 import json
-from typing import Dict, Any, List, Optional
 from datetime import datetime
-import websockets
-from fastapi import WebSocket, WebSocketDisconnect
+from typing import Dict, List, Optional, Set, Any
+from uuid import UUID
+
+from fastapi import WebSocket, WebSocketDisconnect, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 
-from certify_studio.core.events import EventBus, Event, EventType
-from certify_studio.core.logging import get_logger
-from certify_studio.db.session import get_db
-from certify_studio.services.agent_service import AgentService
-
-logger = get_logger(__name__)
+from .database.connection import get_db
+from .agents.core.base import AgentState
+from .services.agent_service import AgentService
+from .services.knowledge_graph_service import KnowledgeGraphService
 
 
-class AgentDataBroadcaster:
-    """Broadcasts real-time agent data to connected frontend clients"""
+class WebSocketManager:
+    """Manages WebSocket connections for real-time updates"""
     
     def __init__(self):
-        self.active_connections: List[WebSocket] = []
-        self.event_bus = EventBus()
-        self.agent_service = AgentService()
+        self.active_connections: Dict[str, WebSocket] = {}
+        self.subscriptions: Dict[str, Set[str]] = {}  # client_id -> set of subscribed topics
         
-    async def connect(self, websocket: WebSocket):
-        """Accept WebSocket connection from frontend"""
+    async def connect(self, websocket: WebSocket, client_id: str):
+        """Accept new WebSocket connection"""
         await websocket.accept()
-        self.active_connections.append(websocket)
+        self.active_connections[client_id] = websocket
+        self.subscriptions[client_id] = set()
         
-        # Send initial agent states
-        await self._send_initial_state(websocket)
-        
-    def disconnect(self, websocket: WebSocket):
+    def disconnect(self, client_id: str):
         """Remove WebSocket connection"""
-        self.active_connections.remove(websocket)
+        if client_id in self.active_connections:
+            del self.active_connections[client_id]
+            del self.subscriptions[client_id]
+    
+    async def subscribe(self, client_id: str, topics: List[str]):
+        """Subscribe client to specific topics"""
+        if client_id in self.subscriptions:
+            self.subscriptions[client_id].update(topics)
+    
+    async def unsubscribe(self, client_id: str, topics: List[str]):
+        """Unsubscribe client from topics"""
+        if client_id in self.subscriptions:
+            self.subscriptions[client_id].difference_update(topics)
+    
+    async def send_to_client(self, client_id: str, message: dict):
+        """Send message to specific client"""
+        if client_id in self.active_connections:
+            websocket = self.active_connections[client_id]
+            try:
+                await websocket.send_json(message)
+            except Exception as e:
+                print(f"Error sending to client {client_id}: {e}")
+                self.disconnect(client_id)
+    
+    async def broadcast_to_topic(self, topic: str, message: dict):
+        """Broadcast message to all clients subscribed to topic"""
+        disconnected_clients = []
         
-    async def _send_initial_state(self, websocket: WebSocket):
-        """Send current agent states to newly connected client"""
-        try:
-            # Get current agent states
-            agent_states = await self.agent_service.get_all_agent_states()
-            
-            initial_data = {
-                "type": "initial_state",
-                "timestamp": datetime.utcnow().isoformat(),
-                "data": {
-                    "agents": agent_states,
-                    "active_generations": await self._get_active_generations(),
-                    "metrics": await self._get_current_metrics()
+        for client_id, topics in self.subscriptions.items():
+            if topic in topics:
+                try:
+                    await self.send_to_client(client_id, message)
+                except:
+                    disconnected_clients.append(client_id)
+        
+        # Clean up disconnected clients
+        for client_id in disconnected_clients:
+            self.disconnect(client_id)
+
+
+# Global WebSocket manager instance
+ws_manager = WebSocketManager()
+
+
+class AgentActivityBroadcaster:
+    """Broadcasts agent activities to connected clients"""
+    
+    def __init__(self, ws_manager: WebSocketManager):
+        self.ws_manager = ws_manager
+        self.agent_states: Dict[str, Dict[str, Any]] = {}
+    
+    async def broadcast_agent_state(self, agent_id: str, state: AgentState):
+        """Broadcast agent state update"""
+        message = {
+            "type": "agent_state_update",
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "agent_id": agent_id,
+                "state": state.value,
+                "details": {
+                    "current_task": getattr(state, "current_task", None),
+                    "progress": getattr(state, "progress", 0),
+                    "resource_usage": getattr(state, "resource_usage", {})
                 }
             }
-            
-            await websocket.send_json(initial_data)
-            logger.info("Sent initial state to frontend client")
-            
-        except Exception as e:
-            logger.error(f"Error sending initial state: {e}")
-            
-    async def broadcast_agent_update(self, agent_id: str, update_data: Dict[str, Any]):
-        """Broadcast agent update to all connected clients"""
-        message = {
-            "type": "agent_update",
-            "timestamp": datetime.utcnow().isoformat(),
-            "agent_id": agent_id,
-            "data": update_data
         }
         
-        disconnected = []
-        for connection in self.active_connections:
-            try:
-                await connection.send_json(message)
-            except WebSocketDisconnect:
-                disconnected.append(connection)
-            except Exception as e:
-                logger.error(f"Error broadcasting to client: {e}")
-                disconnected.append(connection)
-                
-        # Clean up disconnected clients
-        for conn in disconnected:
-            if conn in self.active_connections:
-                self.active_connections.remove(conn)
-                
-    async def broadcast_generation_progress(self, generation_id: str, progress: Dict[str, Any]):
-        """Broadcast generation progress updates"""
-        message = {
-            "type": "generation_progress",
-            "timestamp": datetime.utcnow().isoformat(),
-            "generation_id": generation_id,
-            "data": progress
-        }
+        await self.ws_manager.broadcast_to_topic("agents", message)
         
-        await self._broadcast_to_all(message)
-        
+        # Update cached state
+        self.agent_states[agent_id] = message["data"]
+    
     async def broadcast_collaboration_event(self, event: Dict[str, Any]):
-        """Broadcast agent collaboration events"""
+        """Broadcast agent collaboration event"""
         message = {
             "type": "collaboration_event",
             "timestamp": datetime.utcnow().isoformat(),
             "data": event
         }
         
-        await self._broadcast_to_all(message)
-        
-    async def _broadcast_to_all(self, message: Dict[str, Any]):
-        """Broadcast message to all connected clients"""
-        disconnected = []
-        for connection in self.active_connections:
-            try:
-                await connection.send_json(message)
-            except:
-                disconnected.append(connection)
-                
-        for conn in disconnected:
-            if conn in self.active_connections:
-                self.active_connections.remove(conn)
-                
-    async def _get_active_generations(self) -> List[Dict[str, Any]]:
-        """Get list of active content generations"""
-        # This would query the database for active generations
-        return []
-        
-    async def _get_current_metrics(self) -> Dict[str, Any]:
-        """Get current system metrics"""
-        return {
-            "total_generations": 0,
-            "active_agents": 4,
-            "avg_generation_time": 0,
-            "quality_score": 0
-        }
-
-
-class AgentEventListener:
-    """Listens to agent events and forwards them to the broadcaster"""
+        await self.ws_manager.broadcast_to_topic("collaboration", message)
     
-    def __init__(self, broadcaster: AgentDataBroadcaster):
-        self.broadcaster = broadcaster
-        self.event_bus = EventBus()
-        self._setup_listeners()
-        
-    def _setup_listeners(self):
-        """Setup event listeners for agent events"""
-        
-        # Agent state changes
-        self.event_bus.subscribe(
-            EventType.AGENT_STATE_CHANGED,
-            self._handle_agent_state_change
-        )
-        
-        # Generation progress
-        self.event_bus.subscribe(
-            EventType.GENERATION_PROGRESS,
-            self._handle_generation_progress
-        )
-        
-        # Agent collaboration
-        self.event_bus.subscribe(
-            EventType.AGENT_COLLABORATION,
-            self._handle_collaboration_event
-        )
-        
-        # Task completion
-        self.event_bus.subscribe(
-            EventType.TASK_COMPLETED,
-            self._handle_task_completion
-        )
-        
-    async def _handle_agent_state_change(self, event: Event):
-        """Handle agent state change events"""
-        await self.broadcaster.broadcast_agent_update(
-            event.data["agent_id"],
-            {
-                "state": event.data["new_state"],
-                "previous_state": event.data.get("previous_state"),
-                "reason": event.data.get("reason")
+    async def broadcast_generation_progress(self, job_id: str, progress: Dict[str, Any]):
+        """Broadcast content generation progress"""
+        message = {
+            "type": "generation_progress",
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "job_id": job_id,
+                "progress": progress.get("percentage", 0),
+                "current_step": progress.get("current_step", ""),
+                "estimated_time_remaining": progress.get("eta_seconds", None),
+                "agents_involved": progress.get("agents", [])
             }
-        )
+        }
         
-    async def _handle_generation_progress(self, event: Event):
-        """Handle generation progress events"""
-        await self.broadcaster.broadcast_generation_progress(
-            event.data["generation_id"],
-            {
-                "stage": event.data["stage"],
-                "progress": event.data["progress"],
-                "current_agent": event.data.get("current_agent"),
-                "message": event.data.get("message")
+        await self.ws_manager.broadcast_to_topic(f"generation_{job_id}", message)
+        await self.ws_manager.broadcast_to_topic("generation_all", message)
+    
+    async def broadcast_quality_check_update(self, content_id: str, qa_data: Dict[str, Any]):
+        """Broadcast quality check updates"""
+        message = {
+            "type": "quality_check_update",
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "content_id": content_id,
+                "overall_score": qa_data.get("overall_score", 0),
+                "checks_completed": qa_data.get("checks_completed", []),
+                "issues_found": qa_data.get("issues_found", 0),
+                "current_check": qa_data.get("current_check", "")
             }
-        )
+        }
         
-    async def _handle_collaboration_event(self, event: Event):
-        """Handle agent collaboration events"""
-        await self.broadcaster.broadcast_collaboration_event({
-            "agents": event.data["agents"],
-            "action": event.data["action"],
-            "details": event.data.get("details", {})
+        await self.ws_manager.broadcast_to_topic(f"qa_{content_id}", message)
+        await self.ws_manager.broadcast_to_topic("quality_all", message)
+
+
+# Global broadcaster instance
+broadcaster = AgentActivityBroadcaster(ws_manager)
+
+
+# WebSocket endpoint for real-time updates
+async def websocket_endpoint(websocket: WebSocket, client_id: str):
+    """WebSocket endpoint for real-time agent updates"""
+    await ws_manager.connect(websocket, client_id)
+    
+    try:
+        # Send initial connection confirmation
+        await websocket.send_json({
+            "type": "connection_established",
+            "client_id": client_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "available_topics": [
+                "agents",
+                "collaboration", 
+                "generation_all",
+                "quality_all",
+                "knowledge_graph"
+            ]
         })
         
-    async def _handle_task_completion(self, event: Event):
-        """Handle task completion events"""
-        await self.broadcaster.broadcast_agent_update(
-            event.data["agent_id"],
-            {
-                "task_completed": True,
-                "task_id": event.data["task_id"],
-                "duration": event.data.get("duration"),
-                "result": event.data.get("result")
+        # Send current agent states
+        await websocket.send_json({
+            "type": "initial_state",
+            "data": {
+                "agents": broadcaster.agent_states
             }
-        )
-
-
-class FrontendDataProvider:
-    """Provides formatted data for frontend consumption"""
-    
-    def __init__(self, db: AsyncSession):
-        self.db = db
-        self.agent_service = AgentService()
+        })
         
-    async def get_dashboard_data(self) -> Dict[str, Any]:
-        """Get comprehensive dashboard data for frontend"""
-        return {
-            "platform_metrics": await self._get_platform_metrics(),
-            "agent_status": await self._get_agent_status(),
-            "recent_activities": await self._get_recent_activities(),
-            "generation_stats": await self._get_generation_stats()
-        }
-        
-    async def get_agent_collaboration_data(self) -> Dict[str, Any]:
-        """Get agent collaboration visualization data"""
-        return {
-            "nodes": await self._get_agent_nodes(),
-            "edges": await self._get_collaboration_edges(),
-            "activities": await self._get_collaboration_timeline()
-        }
-        
-    async def get_knowledge_graph_data(self) -> Dict[str, Any]:
-        """Get knowledge graph data for visualization"""
-        return {
-            "concepts": await self._get_concepts(),
-            "relationships": await self._get_relationships(),
-            "statistics": await self._get_graph_statistics()
-        }
-        
-    async def _get_platform_metrics(self) -> Dict[str, Any]:
-        """Get platform-wide metrics"""
-        # Query database for actual metrics
-        return {
-            "total_generations": 150,
-            "active_users": 45,
-            "avg_quality_score": 92.5,
-            "total_content_hours": 320
-        }
-        
-    async def _get_agent_status(self) -> List[Dict[str, Any]]:
-        """Get status of all agents"""
-        agents = await self.agent_service.get_all_agent_states()
-        return [
-            {
-                "id": agent["id"],
-                "name": agent["name"],
-                "type": agent["type"],
-                "status": agent["status"],
-                "current_task": agent.get("current_task"),
-                "utilization": agent.get("utilization", 0)
-            }
-            for agent in agents
-        ]
-        
-    async def _get_recent_activities(self) -> List[Dict[str, Any]]:
-        """Get recent platform activities"""
-        # This would query the activity log
-        return [
-            {
-                "id": "1",
-                "type": "generation_completed",
-                "title": "AWS AI Practitioner Course Generated",
-                "timestamp": datetime.utcnow().isoformat(),
-                "details": {"duration": "45 minutes", "quality_score": 95}
-            }
-        ]
-        
-    async def _get_generation_stats(self) -> Dict[str, Any]:
-        """Get generation statistics"""
-        return {
-            "by_format": {
-                "video": 45,
-                "interactive": 60,
-                "pdf": 30,
-                "vr": 15
-            },
-            "by_domain": {
-                "aws": 40,
-                "azure": 35,
-                "gcp": 25,
-                "general": 50
-            },
-            "trend": [
-                {"date": "2025-01-01", "count": 12},
-                {"date": "2025-01-02", "count": 15},
-                {"date": "2025-01-03", "count": 18},
-                {"date": "2025-01-04", "count": 22},
-                {"date": "2025-01-05", "count": 20}
-            ]
-        }
-        
-    async def _get_agent_nodes(self) -> List[Dict[str, Any]]:
-        """Get agent nodes for visualization"""
-        agents = await self.agent_service.get_all_agent_states()
-        return [
-            {
-                "id": agent["id"],
-                "label": agent["name"],
-                "type": agent["type"],
-                "x": 0,  # Will be calculated by frontend
-                "y": 0,  # Will be calculated by frontend
-                "status": agent["status"]
-            }
-            for agent in agents
-        ]
-        
-    async def _get_collaboration_edges(self) -> List[Dict[str, Any]]:
-        """Get collaboration edges between agents"""
-        # This would query actual collaboration data
-        return [
-            {
-                "id": "edge-1",
-                "source": "content-generator",
-                "target": "quality-assurance",
-                "label": "Review Request",
-                "weight": 10
-            }
-        ]
-        
-    async def _get_collaboration_timeline(self) -> List[Dict[str, Any]]:
-        """Get collaboration timeline events"""
-        return [
-            {
-                "timestamp": datetime.utcnow().isoformat(),
-                "agents": ["content-generator", "domain-extractor"],
-                "event": "Knowledge extraction started",
-                "duration": 5.2
-            }
-        ]
-        
-    async def _get_concepts(self) -> List[Dict[str, Any]]:
-        """Get concepts from knowledge graph"""
-        # This would query the knowledge graph
-        return [
-            {
-                "id": "aws-ai-services",
-                "label": "AWS AI Services",
-                "category": "aws",
-                "difficulty": 0.6,
-                "connections": 12
-            }
-        ]
-        
-    async def _get_relationships(self) -> List[Dict[str, Any]]:
-        """Get relationships from knowledge graph"""
-        return [
-            {
-                "source": "aws-ai-services",
-                "target": "amazon-rekognition",
-                "type": "includes",
-                "weight": 0.8
-            }
-        ]
-        
-    async def _get_graph_statistics(self) -> Dict[str, Any]:
-        """Get knowledge graph statistics"""
-        return {
-            "total_concepts": 245,
-            "total_relationships": 580,
-            "domains": 12,
-            "avg_connections_per_concept": 4.7
-        }
-
-
-# Global instances
-broadcaster = AgentDataBroadcaster()
-event_listener = AgentEventListener(broadcaster)
-
-
-async def setup_frontend_connector(app):
-    """Setup frontend connector on app startup"""
-    logger.info("Setting up frontend connector...")
-    
-    # WebSocket endpoint for real-time updates
-    @app.websocket("/ws/agents")
-    async def websocket_endpoint(websocket: WebSocket):
-        await broadcaster.connect(websocket)
-        try:
-            while True:
-                # Keep connection alive and handle incoming messages
-                data = await websocket.receive_text()
-                # Handle frontend requests if needed
-                logger.debug(f"Received from frontend: {data}")
-        except WebSocketDisconnect:
-            broadcaster.disconnect(websocket)
-            logger.info("Frontend client disconnected")
+        while True:
+            # Wait for messages from client
+            data = await websocket.receive_json()
             
-    # REST endpoints for frontend data
-    @app.get("/api/v1/frontend/dashboard")
-    async def get_dashboard_data(db: AsyncSession = Depends(get_db)):
-        """Get dashboard data for frontend"""
-        provider = FrontendDataProvider(db)
-        return await provider.get_dashboard_data()
-        
-    @app.get("/api/v1/frontend/agents/collaboration")
-    async def get_collaboration_data(db: AsyncSession = Depends(get_db)):
-        """Get agent collaboration data"""
-        provider = FrontendDataProvider(db)
-        return await provider.get_agent_collaboration_data()
-        
-    @app.get("/api/v1/frontend/knowledge-graph")
-    async def get_knowledge_graph(db: AsyncSession = Depends(get_db)):
-        """Get knowledge graph data"""
-        provider = FrontendDataProvider(db)
-        return await provider.get_knowledge_graph_data()
-        
-    logger.info("Frontend connector setup complete")
+            if data["type"] == "subscribe":
+                await ws_manager.subscribe(client_id, data["topics"])
+                await websocket.send_json({
+                    "type": "subscription_confirmed",
+                    "topics": data["topics"]
+                })
+            
+            elif data["type"] == "unsubscribe":
+                await ws_manager.unsubscribe(client_id, data["topics"])
+                await websocket.send_json({
+                    "type": "unsubscription_confirmed",
+                    "topics": data["topics"]
+                })
+            
+            elif data["type"] == "ping":
+                await websocket.send_json({
+                    "type": "pong",
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+                
+    except WebSocketDisconnect:
+        ws_manager.disconnect(client_id)
+    except Exception as e:
+        print(f"WebSocket error for client {client_id}: {e}")
+        ws_manager.disconnect(client_id)
+
+
+# REST endpoints for dashboard data
+
+class DashboardStats(BaseModel):
+    """Dashboard statistics model"""
+    total_agents: int
+    active_agents: int
+    total_generations_today: int
+    average_generation_time: float
+    quality_score_average: float
+    active_users: int
+    system_health: str
+
+
+class AgentStatus(BaseModel):
+    """Individual agent status"""
+    agent_id: str
+    agent_type: str
+    state: str
+    current_task: Optional[str]
+    tasks_completed: int
+    success_rate: float
+    average_processing_time: float
+    last_active: datetime
+
+
+class CollaborationMetrics(BaseModel):
+    """Agent collaboration metrics"""
+    total_collaborations: int
+    active_collaborations: int
+    collaboration_patterns: Dict[str, int]
+    average_agents_per_task: float
+    collaboration_success_rate: float
+
+
+class KnowledgeGraphStats(BaseModel):
+    """Knowledge graph statistics"""
+    total_nodes: int
+    total_relationships: int
+    domains_covered: int
+    concepts_extracted: int
+    recent_updates: List[Dict[str, Any]]
+
+
+async def get_dashboard_stats(
+    db: AsyncSession = Depends(get_db),
+    agent_manager: AgentManager = Depends(lambda: AgentManager())
+) -> DashboardStats:
+    """Get real-time dashboard statistics"""
+    
+    # Get agent statistics
+    agents = await agent_manager.get_all_agents()
+    active_agents = sum(1 for agent in agents if agent.state == AgentState.BUSY)
+    
+    # Get generation statistics (mock data for now)
+    total_generations_today = 47
+    average_generation_time = 245.6  # seconds
+    quality_score_average = 0.92
+    active_users = 12
+    
+    # System health check
+    system_health = "healthy" if active_agents < len(agents) * 0.8 else "busy"
+    
+    return DashboardStats(
+        total_agents=len(agents),
+        active_agents=active_agents,
+        total_generations_today=total_generations_today,
+        average_generation_time=average_generation_time,
+        quality_score_average=quality_score_average,
+        active_users=active_users,
+        system_health=system_health
+    )
+
+
+async def get_agent_statuses(
+    db: AsyncSession = Depends(get_db),
+    agent_manager: AgentManager = Depends(lambda: AgentManager())
+) -> List[AgentStatus]:
+    """Get detailed status of all agents"""
+    
+    agents = await agent_manager.get_all_agents()
+    statuses = []
+    
+    for agent in agents:
+        # Get agent metrics (mock data for demonstration)
+        status = AgentStatus(
+            agent_id=str(agent.id),
+            agent_type=agent.__class__.__name__,
+            state=agent.state.value,
+            current_task=getattr(agent, "current_task", None),
+            tasks_completed=getattr(agent, "tasks_completed", 0),
+            success_rate=getattr(agent, "success_rate", 0.95),
+            average_processing_time=getattr(agent, "avg_processing_time", 30.5),
+            last_active=getattr(agent, "last_active", datetime.utcnow())
+        )
+        statuses.append(status)
+    
+    return statuses
+
+
+async def get_collaboration_metrics(
+    db: AsyncSession = Depends(get_db)
+) -> CollaborationMetrics:
+    """Get agent collaboration metrics"""
+    
+    # Mock data for demonstration
+    return CollaborationMetrics(
+        total_collaborations=342,
+        active_collaborations=7,
+        collaboration_patterns={
+            "content_qa": 156,
+            "domain_content": 98,
+            "qa_export": 88
+        },
+        average_agents_per_task=2.3,
+        collaboration_success_rate=0.94
+    )
+
+
+async def get_knowledge_graph_stats(
+    db: AsyncSession = Depends(get_db),
+    kg_service: KnowledgeGraphService = Depends(lambda: KnowledgeGraphService())
+) -> KnowledgeGraphStats:
+    """Get knowledge graph statistics"""
+    
+    stats = await kg_service.get_statistics()
+    
+    return KnowledgeGraphStats(
+        total_nodes=stats.get("total_nodes", 0),
+        total_relationships=stats.get("total_relationships", 0),
+        domains_covered=stats.get("domains_covered", 0),
+        concepts_extracted=stats.get("concepts_extracted", 0),
+        recent_updates=stats.get("recent_updates", [])[:10]  # Last 10 updates
+    )
+
+
+# Integration with main app
+def setup_frontend_connector(app):
+    """Setup frontend connector routes"""
+    
+    # WebSocket endpoint
+    app.websocket("/ws/agents")(websocket_endpoint)
+    
+    # REST endpoints
+    app.get("/api/v1/dashboard/stats", response_model=DashboardStats)(get_dashboard_stats)
+    app.get("/api/v1/dashboard/agents", response_model=List[AgentStatus])(get_agent_statuses)
+    app.get("/api/v1/dashboard/collaboration", response_model=CollaborationMetrics)(get_collaboration_metrics)
+    app.get("/api/v1/dashboard/knowledge-graph", response_model=KnowledgeGraphStats)(get_knowledge_graph_stats)
+    
+    return app
+
+
+# Agent event hooks for real-time updates
+async def on_agent_state_change(agent_id: str, new_state: AgentState):
+    """Hook called when agent state changes"""
+    await broadcaster.broadcast_agent_state(agent_id, new_state)
+
+
+async def on_collaboration_event(event: Dict[str, Any]):
+    """Hook called when agents collaborate"""
+    await broadcaster.broadcast_collaboration_event(event)
+
+
+async def on_generation_progress(job_id: str, progress: Dict[str, Any]):
+    """Hook called when generation progresses"""
+    await broadcaster.broadcast_generation_progress(job_id, progress)
+
+
+async def on_quality_check_update(content_id: str, qa_data: Dict[str, Any]):
+    """Hook called when quality check updates"""
+    await broadcaster.broadcast_quality_check_update(content_id, qa_data)
+
+
+# Example usage in JavaScript/TypeScript frontend:
+"""
+// Connect to WebSocket
+const ws = new WebSocket('ws://localhost:8000/ws/agents?client_id=frontend-123');
+
+ws.onopen = () => {
+    console.log('Connected to agent updates');
+    
+    // Subscribe to topics
+    ws.send(JSON.stringify({
+        type: 'subscribe',
+        topics: ['agents', 'collaboration', 'generation_all']
+    }));
+};
+
+ws.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    
+    switch (message.type) {
+        case 'agent_state_update':
+            updateAgentDisplay(message.data);
+            break;
+        case 'collaboration_event':
+            showCollaborationAnimation(message.data);
+            break;
+        case 'generation_progress':
+            updateProgressBar(message.data);
+            break;
+    }
+};
+
+// REST API calls
+async function fetchDashboardStats() {
+    const response = await fetch('/api/v1/dashboard/stats');
+    const stats = await response.json();
+    updateDashboard(stats);
+}
+
+async function fetchAgentStatuses() {
+    const response = await fetch('/api/v1/dashboard/agents');
+    const agents = await response.json();
+    renderAgentGrid(agents);
+}
+"""
