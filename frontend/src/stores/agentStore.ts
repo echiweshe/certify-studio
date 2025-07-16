@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import type { Agent, AgentStatus } from '@/types'
 import { AgentType } from '@/types'
-import { agentService } from '@/services/agents'
+import { agentService, AgentUpdate } from '@/services/agents'
 
 interface AgentState {
   agents: Agent[]
@@ -15,6 +15,7 @@ interface AgentState {
   fetchAgents: () => Promise<void>
   selectAgent: (agent: Agent | null) => void
   updateAgentStatus: (agentId: string, status: AgentStatus) => void
+  updateAgentFromUpdate: (update: AgentUpdate) => void
   subscribeToUpdates: () => void
   unsubscribeFromUpdates: () => void
 }
@@ -37,10 +38,19 @@ export const useAgentStore = create<AgentState>()(
           isLoading: false 
         })
       } catch (error) {
+        console.error('Failed to fetch agents:', error)
         set({ 
           error: error instanceof Error ? error.message : 'Failed to fetch agents',
           isLoading: false 
         })
+        
+        // Use mock data as fallback
+        if (import.meta.env.DEV) {
+          set({ 
+            agents: mockAgents, 
+            activeAgents: mockAgents.filter(a => a.status !== 'idle') 
+          })
+        }
       }
     },
 
@@ -55,26 +65,65 @@ export const useAgentStore = create<AgentState>()(
         ),
         activeAgents: state.agents
           .map(agent => agent.id === agentId ? { ...agent, status } : agent)
-          .filter(a => a.status !== 'idle')
+          .filter(a => a.status !== 'idle'),
+        selectedAgent: state.selectedAgent?.id === agentId 
+          ? { ...state.selectedAgent, status }
+          : state.selectedAgent
+      }))
+    },
+
+    updateAgentFromUpdate: (update: AgentUpdate) => {
+      set((state) => ({
+        agents: state.agents.map(agent =>
+          agent.id === update.agent_id 
+            ? { 
+                ...agent, 
+                status: update.state as AgentStatus,
+                currentTask: update.details.current_task || agent.currentTask,
+                performance: update.details.resource_usage 
+                  ? {
+                      ...agent.performance,
+                      resourceUsage: update.details.resource_usage
+                    }
+                  : agent.performance
+              } 
+            : agent
+        ),
+        activeAgents: state.agents
+          .map(agent => 
+            agent.id === update.agent_id 
+              ? { 
+                  ...agent, 
+                  status: update.state as AgentStatus,
+                  currentTask: update.details.current_task || agent.currentTask 
+                } 
+              : agent
+          )
+          .filter(a => a.status !== 'idle'),
+        selectedAgent: state.selectedAgent?.id === update.agent_id 
+          ? { 
+              ...state.selectedAgent, 
+              status: update.state as AgentStatus,
+              currentTask: update.details.current_task || state.selectedAgent.currentTask
+            }
+          : state.selectedAgent
       }))
     },
 
     subscribeToUpdates: () => {
-      // WebSocket subscription for real-time updates
-      agentService.subscribeToAgentUpdates((update) => {
-        if (update.type === 'status_update') {
-          get().updateAgentStatus(update.agentId, update.status)
-        }
+      // Subscribe to all agent updates
+      agentService.subscribeToAgentUpdates('all', (update) => {
+        get().updateAgentFromUpdate(update)
       })
     },
 
     unsubscribeFromUpdates: () => {
-      agentService.unsubscribeFromAgentUpdates()
+      agentService.unsubscribeFromAgentUpdates('all')
     },
   }))
 )
 
-// Mock data for development
+// Mock data for development fallback
 const mockAgents: Agent[] = [
   {
     id: '1',
@@ -136,8 +185,3 @@ const mockAgents: Agent[] = [
     lastActivity: new Date(),
   },
 ]
-
-// Initialize with mock data in development
-if (import.meta.env.DEV) {
-  useAgentStore.setState({ agents: mockAgents, activeAgents: mockAgents.filter(a => a.status !== 'idle') })
-}

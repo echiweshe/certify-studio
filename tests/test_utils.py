@@ -1,36 +1,34 @@
 """
-Test Utilities for Certify Studio
-
-Common utilities and helpers for testing.
+Test utilities for Certify Studio tests
 """
 
 import asyncio
-import time
-from typing import Optional, Dict, Any
+import os
 from pathlib import Path
+from typing import Any, Dict, Optional
 import httpx
-from httpx import AsyncClient
+import pytest
 
 
-async def create_test_client(base_url: str = "http://localhost:8000") -> AsyncClient:
+async def create_test_client(base_url: str = "http://localhost:8000") -> httpx.AsyncClient:
     """Create an async HTTP client for testing"""
-    return AsyncClient(base_url=base_url, timeout=30.0)
+    return httpx.AsyncClient(base_url=base_url, timeout=30.0)
 
 
 async def authenticate_test_user(
-    client: AsyncClient,
-    email: str = "test@example.com",
+    client: httpx.AsyncClient, 
+    email: str = "test@certifystudio.com",
     password: str = "TestPassword123!"
-) -> Optional[str]:
-    """Authenticate a test user and return access token"""
-    
+) -> str:
+    """Authenticate a test user and return the token"""
     # Try to login first
     login_response = await client.post(
         "/api/v1/auth/login",
         data={
             "username": email,
             "password": password
-        }
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
     )
     
     if login_response.status_code == 200:
@@ -49,57 +47,55 @@ async def authenticate_test_user(
     if register_response.status_code in [200, 201]:
         return register_response.json()["access_token"]
     
-    return None
+    raise Exception(f"Failed to authenticate: {register_response.text}")
 
 
 async def upload_file_async(
-    client: AsyncClient,
+    client: httpx.AsyncClient,
     file_path: Path,
-    endpoint: str,
-    headers: Dict[str, str]
+    token: str,
+    endpoint: str = "/api/v1/generation/upload"
 ) -> Dict[str, Any]:
     """Upload a file asynchronously"""
-    
     with open(file_path, "rb") as f:
         files = {
-            "file": (
-                file_path.name,
-                f,
-                "application/pdf" if file_path.suffix == ".pdf" else "application/octet-stream"
-            )
+            "file": (file_path.name, f, "application/pdf")
         }
         
         response = await client.post(
             endpoint,
             files=files,
-            headers=headers
+            headers={"Authorization": f"Bearer {token}"}
         )
     
-    response.raise_for_status()
+    if response.status_code != 200:
+        raise Exception(f"Upload failed: {response.text}")
+    
     return response.json()
 
 
 async def wait_for_job_completion(
-    client: AsyncClient,
+    client: httpx.AsyncClient,
     job_id: str,
-    headers: Dict[str, str],
-    check_endpoint: str = "/api/v1/jobs/{job_id}",
+    token: str,
     timeout: int = 300,
     poll_interval: int = 2
 ) -> Dict[str, Any]:
     """Wait for an async job to complete"""
+    headers = {"Authorization": f"Bearer {token}"}
+    start_time = asyncio.get_event_loop().time()
     
-    start_time = time.time()
-    
-    while time.time() - start_time < timeout:
+    while asyncio.get_event_loop().time() - start_time < timeout:
         response = await client.get(
-            check_endpoint.format(job_id=job_id),
+            f"/api/v1/jobs/{job_id}",
             headers=headers
         )
         
         if response.status_code == 200:
             data = response.json()
-            if data.get("status") in ["completed", "failed", "error"]:
+            if data["status"] in ["completed", "failed"]:
+                if data["status"] == "failed":
+                    raise Exception(f"Job failed: {data.get('error', 'Unknown error')}")
                 return data
         
         await asyncio.sleep(poll_interval)
@@ -108,121 +104,170 @@ async def wait_for_job_completion(
 
 
 async def download_export(
-    client: AsyncClient,
+    client: httpx.AsyncClient,
     download_url: str,
-    headers: Dict[str, str],
+    token: str,
     output_path: Path
 ) -> Path:
     """Download an exported file"""
+    response = await client.get(
+        download_url,
+        headers={"Authorization": f"Bearer {token}"},
+        follow_redirects=True
+    )
     
-    response = await client.get(download_url, headers=headers)
-    response.raise_for_status()
+    if response.status_code != 200:
+        raise Exception(f"Download failed: {response.text}")
     
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    
     with open(output_path, "wb") as f:
         f.write(response.content)
     
     return output_path
 
 
-def assert_response_ok(response: httpx.Response, expected_status: int = 200):
-    """Assert that response has expected status code"""
-    if response.status_code != expected_status:
-        raise AssertionError(
-            f"Expected status {expected_status}, got {response.status_code}. "
-            f"Response: {response.text}"
-        )
-
-
-def assert_json_contains(response_json: Dict[str, Any], required_keys: list):
-    """Assert that JSON response contains required keys"""
-    missing_keys = [key for key in required_keys if key not in response_json]
-    if missing_keys:
-        raise AssertionError(f"Response missing required keys: {missing_keys}")
-
-
-class TestTimer:
-    """Context manager for timing test operations"""
+class MockResponse:
+    """Mock HTTP response for testing"""
+    def __init__(self, json_data: Dict[str, Any], status_code: int = 200):
+        self.json_data = json_data
+        self.status_code = status_code
+        self.content = str(json_data).encode()
+        self.text = str(json_data)
     
-    def __init__(self, name: str):
-        self.name = name
-        self.start_time = None
-        self.end_time = None
-        self.duration = None
-    
-    def __enter__(self):
-        self.start_time = time.time()
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.end_time = time.time()
-        self.duration = self.end_time - self.start_time
-        print(f"{self.name} took {self.duration:.2f} seconds")
+    def json(self):
+        return self.json_data
 
 
-# Mock data generators
-
-def generate_test_pdf_content() -> bytes:
-    """Generate mock PDF content for testing"""
-    # This would normally create actual PDF bytes
-    # For testing, we'll return a simple placeholder
-    return b"%PDF-1.4\n%Mock PDF content for testing\n"
-
-
-def generate_test_user(index: int = 0) -> Dict[str, str]:
-    """Generate test user data"""
-    return {
-        "email": f"test_user_{index}_{int(time.time())}@example.com",
-        "password": "TestPassword123!",
-        "full_name": f"Test User {index}"
-    }
+def mock_successful_upload():
+    """Mock a successful file upload response"""
+    return MockResponse({
+        "file_id": "test-file-123",
+        "status": "uploaded",
+        "file_size": 1024 * 1024,  # 1MB
+        "page_count": 42
+    })
 
 
-def generate_test_generation_config() -> Dict[str, Any]:
-    """Generate test generation configuration"""
-    return {
-        "difficulty_level": "intermediate",
-        "target_audience": "IT professionals",
-        "include_hands_on_labs": True,
-        "include_quizzes": True,
-        "include_animations": True,
-        "cognitive_load_optimization": True,
-        "language": "en",
-        "estimated_duration_hours": 10
-    }
+def mock_domain_extraction():
+    """Mock domain extraction response"""
+    return MockResponse({
+        "domains": [
+            {
+                "name": "Fundamentals of AI and ML",
+                "weight": 0.25,
+                "concepts": ["Machine Learning", "Deep Learning", "Neural Networks"]
+            },
+            {
+                "name": "Fundamentals of Generative AI",
+                "weight": 0.20,
+                "concepts": ["LLMs", "Transformers", "Prompt Engineering"]
+            },
+            {
+                "name": "Applications of Foundation Models",
+                "weight": 0.20,
+                "concepts": ["AWS Bedrock", "SageMaker", "Model Deployment"]
+            },
+            {
+                "name": "Guidelines for Responsible AI",
+                "weight": 0.20,
+                "concepts": ["Bias", "Fairness", "Explainability"]
+            },
+            {
+                "name": "Security, Compliance, and Governance for AI Solutions",
+                "weight": 0.15,
+                "concepts": ["Data Privacy", "Model Security", "Compliance"]
+            }
+        ]
+    })
 
 
-# Validation helpers
-
-def validate_generation_result(result: Dict[str, Any]):
-    """Validate generation result structure"""
-    required_fields = ["content_id", "status", "modules"]
-    assert all(field in result for field in required_fields), \
-        f"Generation result missing required fields. Got: {result.keys()}"
-    
-    assert result["status"] == "completed", \
-        f"Generation did not complete successfully. Status: {result['status']}"
-    
-    assert len(result["modules"]) > 0, \
-        "Generation produced no modules"
-
-
-def validate_export_result(result: Dict[str, Any]):
-    """Validate export result structure"""
-    required_fields = ["export_id", "status", "download_url"]
-    assert all(field in result for field in required_fields), \
-        f"Export result missing required fields. Got: {result.keys()}"
-    
-    assert result["status"] == "completed", \
-        f"Export did not complete successfully. Status: {result['status']}"
+def mock_generation_complete():
+    """Mock content generation completion"""
+    return MockResponse({
+        "status": "completed",
+        "content_id": "content-456",
+        "modules": [
+            {"name": "Introduction to AI", "duration": 300},
+            {"name": "Machine Learning Fundamentals", "duration": 600},
+            {"name": "AWS AI Services", "duration": 900}
+        ],
+        "cognitive_optimization_applied": True
+    })
 
 
-def validate_qa_result(result: Dict[str, Any]):
-    """Validate QA result structure"""
-    required_fields = ["overall_score", "results", "issues"]
-    assert all(field in result for field in required_fields), \
-        f"QA result missing required fields. Got: {result.keys()}"
-    
-    assert 0 <= result["overall_score"] <= 1, \
-        f"QA score out of range: {result['overall_score']}"
+def mock_quality_check():
+    """Mock quality check results"""
+    return MockResponse({
+        "overall_score": 0.92,
+        "results": {
+            "content_accuracy": 0.95,
+            "pedagogical_quality": 0.90,
+            "accessibility_compliance": 0.93,
+            "technical_accuracy": 0.91,
+            "cognitive_load_balance": 0.89
+        },
+        "issues": [],
+        "recommendations": [
+            "Consider adding more interactive elements in Module 2",
+            "Add captions to all video content"
+        ]
+    })
+
+
+# Test fixtures
+@pytest.fixture
+async def test_client():
+    """Fixture that provides an async HTTP client"""
+    async with httpx.AsyncClient(base_url="http://localhost:8000") as client:
+        yield client
+
+
+@pytest.fixture
+async def authenticated_client(test_client):
+    """Fixture that provides an authenticated client"""
+    token = await authenticate_test_user(test_client)
+    test_client.headers["Authorization"] = f"Bearer {token}"
+    yield test_client
+
+
+@pytest.fixture
+def test_pdf_path():
+    """Fixture that provides a test PDF path"""
+    # Create a simple test PDF if it doesn't exist
+    test_path = Path("tests/fixtures/test.pdf")
+    if not test_path.exists():
+        test_path.parent.mkdir(parents=True, exist_ok=True)
+        # Would create a simple PDF here in a real test
+        test_path.write_text("Test PDF content")
+    return test_path
+
+
+# Utility functions for test assertions
+def assert_valid_file_id(file_id: str):
+    """Assert that a file ID is valid"""
+    assert isinstance(file_id, str)
+    assert len(file_id) > 0
+    assert file_id != "null"
+    assert file_id != "undefined"
+
+
+def assert_valid_job_id(job_id: str):
+    """Assert that a job ID is valid"""
+    assert isinstance(job_id, str)
+    assert len(job_id) > 0
+    # Job IDs are typically UUIDs
+    assert len(job_id.split("-")) == 5  # UUID format
+
+
+def assert_valid_content_id(content_id: str):
+    """Assert that a content ID is valid"""
+    assert isinstance(content_id, str)
+    assert len(content_id) > 0
+
+
+def assert_quality_scores(scores: Dict[str, float], min_threshold: float = 0.8):
+    """Assert that quality scores meet minimum thresholds"""
+    for metric, score in scores.items():
+        assert isinstance(score, (int, float))
+        assert 0 <= score <= 1
+        assert score >= min_threshold, f"{metric} score {score} is below threshold {min_threshold}"

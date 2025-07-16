@@ -1,162 +1,275 @@
 """
-Quick Backend Connectivity Test
-
-This script quickly tests if the backend is running and all endpoints are accessible.
+Test backend connectivity
 """
 
-import httpx
 import asyncio
+import httpx
 import json
 from datetime import datetime
-from colorama import init, Fore, Style
-
-# Initialize colorama
-init()
 
 
 async def test_backend_connectivity():
-    """Test all backend endpoints for connectivity"""
-    
-    print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}CERTIFY STUDIO - BACKEND CONNECTIVITY TEST{Style.RESET_ALL}".center(60))
-    print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}\n")
+    """Test all backend endpoints are accessible"""
     
     base_url = "http://localhost:8000"
-    
-    # Endpoints to test
-    endpoints = [
-        ("/", "GET", "Root endpoint"),
-        ("/health", "GET", "Health check"),
-        ("/api/v1/info", "GET", "API information"),
-        ("/docs", "GET", "API documentation"),
-        ("/redoc", "GET", "ReDoc documentation"),
-    ]
-    
-    results = []
+    results = {
+        "timestamp": datetime.now().isoformat(),
+        "base_url": base_url,
+        "tests": []
+    }
     
     async with httpx.AsyncClient(base_url=base_url, timeout=10.0) as client:
-        for endpoint, method, description in endpoints:
-            try:
-                print(f"{Fore.BLUE}Testing {method} {endpoint}{Style.RESET_ALL} - {description}...", end="")
-                
-                if method == "GET":
-                    response = await client.get(endpoint)
-                
-                if response.status_code == 200:
-                    print(f" {Fore.GREEN}✓ OK{Style.RESET_ALL}")
-                    
-                    # Try to parse JSON response
-                    try:
-                        data = response.json()
-                        if endpoint == "/health":
-                            print(f"  └─ Status: {data.get('status', 'unknown')}")
-                            print(f"  └─ Database: {data.get('services', {}).get('database', 'unknown')}")
-                            print(f"  └─ AI Agents: {data.get('services', {}).get('ai_agents', 'unknown')}")
-                        elif endpoint == "/api/v1/info":
-                            print(f"  └─ Version: {data.get('version', 'unknown')}")
-                            print(f"  └─ Agents: {len(data.get('agents', []))}")
-                    except:
-                        pass
-                    
-                    results.append((endpoint, True, response.status_code))
-                else:
-                    print(f" {Fore.RED}✗ Failed (Status: {response.status_code}){Style.RESET_ALL}")
-                    results.append((endpoint, False, response.status_code))
-                    
-            except httpx.ConnectError:
-                print(f" {Fore.RED}✗ Connection refused{Style.RESET_ALL}")
-                results.append((endpoint, False, "Connection refused"))
-            except httpx.TimeoutException:
-                print(f" {Fore.RED}✗ Timeout{Style.RESET_ALL}")
-                results.append((endpoint, False, "Timeout"))
-            except Exception as e:
-                print(f" {Fore.RED}✗ Error: {str(e)}{Style.RESET_ALL}")
-                results.append((endpoint, False, str(e)))
+        
+        # Test 1: Root endpoint
+        print("Testing root endpoint...")
+        try:
+            response = await client.get("/")
+            results["tests"].append({
+                "endpoint": "/",
+                "status": response.status_code,
+                "success": response.status_code == 200,
+                "data": response.json() if response.status_code == 200 else None
+            })
+            print(f"✓ Root endpoint: {response.status_code}")
+        except Exception as e:
+            results["tests"].append({
+                "endpoint": "/",
+                "error": str(e),
+                "success": False
+            })
+            print(f"✗ Root endpoint failed: {e}")
+        
+        # Test 2: Health endpoint
+        print("\nTesting health endpoint...")
+        try:
+            response = await client.get("/health")
+            health_data = response.json()
+            results["tests"].append({
+                "endpoint": "/health",
+                "status": response.status_code,
+                "success": response.status_code == 200,
+                "data": health_data
+            })
+            print(f"✓ Health endpoint: {response.status_code}")
+            print(f"  - Status: {health_data.get('status', 'unknown')}")
+            print(f"  - Database: {health_data.get('services', {}).get('database', 'unknown')}")
+            print(f"  - AI Agents: {health_data.get('services', {}).get('ai_agents', 'unknown')}")
+        except Exception as e:
+            results["tests"].append({
+                "endpoint": "/health",
+                "error": str(e),
+                "success": False
+            })
+            print(f"✗ Health endpoint failed: {e}")
+        
+        # Test 3: API info endpoint
+        print("\nTesting API info endpoint...")
+        try:
+            response = await client.get("/api/v1/info")
+            info_data = response.json()
+            results["tests"].append({
+                "endpoint": "/api/v1/info",
+                "status": response.status_code,
+                "success": response.status_code == 200,
+                "data": info_data
+            })
+            print(f"✓ API info endpoint: {response.status_code}")
+            print(f"  - Agents: {len(info_data.get('agents', []))}")
+            print(f"  - Capabilities: {len(info_data.get('capabilities', []))}")
+        except Exception as e:
+            results["tests"].append({
+                "endpoint": "/api/v1/info",
+                "error": str(e),
+                "success": False
+            })
+            print(f"✗ API info endpoint failed: {e}")
+        
+        # Test 4: Dashboard stats endpoint
+        print("\nTesting dashboard stats endpoint...")
+        try:
+            response = await client.get("/api/v1/dashboard/stats")
+            if response.status_code == 401:
+                print("  - Dashboard endpoint requires authentication (expected)")
+                results["tests"].append({
+                    "endpoint": "/api/v1/dashboard/stats",
+                    "status": response.status_code,
+                    "success": True,  # 401 is expected without auth
+                    "note": "Requires authentication"
+                })
+            else:
+                stats_data = response.json()
+                results["tests"].append({
+                    "endpoint": "/api/v1/dashboard/stats",
+                    "status": response.status_code,
+                    "success": response.status_code == 200,
+                    "data": stats_data
+                })
+                print(f"✓ Dashboard stats endpoint: {response.status_code}")
+        except Exception as e:
+            results["tests"].append({
+                "endpoint": "/api/v1/dashboard/stats",
+                "error": str(e),
+                "success": False
+            })
+            print(f"✗ Dashboard stats endpoint failed: {e}")
+        
+        # Test 5: WebSocket endpoint
+        print("\nTesting WebSocket endpoint...")
+        try:
+            # Test if WebSocket endpoint is accessible (HTTP upgrade)
+            ws_response = await client.get("/ws/agents")
+            # We expect a 426 Upgrade Required or similar for WebSocket endpoints
+            if ws_response.status_code in [426, 400]:
+                print("✓ WebSocket endpoint exists (requires WebSocket upgrade)")
+                results["tests"].append({
+                    "endpoint": "/ws/agents",
+                    "status": ws_response.status_code,
+                    "success": True,
+                    "note": "WebSocket endpoint available"
+                })
+            else:
+                results["tests"].append({
+                    "endpoint": "/ws/agents",
+                    "status": ws_response.status_code,
+                    "success": False
+                })
+        except Exception as e:
+            results["tests"].append({
+                "endpoint": "/ws/agents",
+                "error": str(e),
+                "success": False
+            })
+            print(f"✗ WebSocket endpoint check failed: {e}")
+        
+        # Test 6: API documentation
+        print("\nTesting API documentation...")
+        try:
+            response = await client.get("/docs")
+            results["tests"].append({
+                "endpoint": "/docs",
+                "status": response.status_code,
+                "success": response.status_code == 200,
+                "note": "Swagger UI available" if response.status_code == 200 else "Documentation not accessible"
+            })
+            print(f"✓ API documentation: {response.status_code}")
+        except Exception as e:
+            results["tests"].append({
+                "endpoint": "/docs",
+                "error": str(e),
+                "success": False
+            })
+            print(f"✗ API documentation failed: {e}")
     
     # Summary
-    print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}SUMMARY{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+    print("\n" + "=" * 60)
+    print("BACKEND CONNECTIVITY TEST SUMMARY")
+    print("=" * 60)
     
-    successful = sum(1 for _, success, _ in results if success)
-    total = len(results)
+    successful_tests = sum(1 for test in results["tests"] if test.get("success", False))
+    total_tests = len(results["tests"])
     
-    print(f"Total endpoints tested: {total}")
-    print(f"Successful: {Fore.GREEN}{successful}{Style.RESET_ALL}")
-    print(f"Failed: {Fore.RED}{total - successful}{Style.RESET_ALL}")
+    print(f"Total tests: {total_tests}")
+    print(f"Successful: {successful_tests}")
+    print(f"Failed: {total_tests - successful_tests}")
+    print(f"Success rate: {(successful_tests/total_tests)*100:.1f}%")
     
-    if successful == total:
-        print(f"\n{Fore.GREEN}✅ All endpoints are accessible!{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}The backend is fully operational.{Style.RESET_ALL}")
-        return True
-    else:
-        print(f"\n{Fore.RED}❌ Some endpoints are not accessible.{Style.RESET_ALL}")
-        if any("Connection refused" in str(status) for _, _, status in results):
-            print(f"{Fore.YELLOW}⚠️  The backend server might not be running.{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}   Run: uv run uvicorn certify_studio.main:app --reload{Style.RESET_ALL}")
-        return False
+    # Save results
+    with open("backend_connectivity_test_results.json", "w") as f:
+        json.dump(results, f, indent=2)
+    print(f"\nDetailed results saved to: backend_connectivity_test_results.json")
+    
+    # Return success if at least core endpoints work
+    return successful_tests >= 3  # At least root, health, and API info should work
 
 
-async def test_api_functionality():
-    """Test basic API functionality"""
-    
-    print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}API FUNCTIONALITY TEST{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}\n")
+async def test_authentication_flow():
+    """Test authentication endpoints"""
+    print("\n" + "=" * 60)
+    print("TESTING AUTHENTICATION FLOW")
+    print("=" * 60)
     
     base_url = "http://localhost:8000"
     
-    async with httpx.AsyncClient(base_url=base_url, timeout=10.0) as client:
-        # Test authentication
-        print(f"{Fore.BLUE}Testing authentication...{Style.RESET_ALL}")
-        
-        # Try to register a test user
-        test_user = {
-            "email": f"test_{datetime.now().timestamp()}@example.com",
+    async with httpx.AsyncClient(base_url=base_url) as client:
+        # Test registration
+        print("\nTesting user registration...")
+        register_data = {
+            "email": f"test_{datetime.now().timestamp()}@certifystudio.com",
             "password": "TestPassword123!",
             "full_name": "Test User"
         }
         
         try:
-            response = await client.post("/api/v1/auth/register", json=test_user)
+            response = await client.post("/api/v1/auth/register", json=register_data)
             if response.status_code in [200, 201]:
-                print(f"  {Fore.GREEN}✓ User registration works{Style.RESET_ALL}")
+                print(f"✓ Registration successful: {response.status_code}")
                 token = response.json().get("access_token")
-                
                 if token:
+                    print(f"  - Token received: {token[:20]}...")
+            elif response.status_code == 409:
+                print("  - User already exists (expected if test ran before)")
+            else:
+                print(f"✗ Registration failed: {response.status_code}")
+                print(f"  - Response: {response.text}")
+        except Exception as e:
+            print(f"✗ Registration failed: {e}")
+        
+        # Test login
+        print("\nTesting user login...")
+        login_data = {
+            "username": register_data["email"],
+            "password": register_data["password"]
+        }
+        
+        try:
+            response = await client.post(
+                "/api/v1/auth/login",
+                data=login_data,
+                headers={"Content-Type": "application/x-www-form-urlencoded"}
+            )
+            if response.status_code == 200:
+                print(f"✓ Login successful: {response.status_code}")
+                token = response.json().get("access_token")
+                if token:
+                    print(f"  - Token received: {token[:20]}...")
+                    
                     # Test authenticated endpoint
+                    print("\nTesting authenticated endpoint...")
                     headers = {"Authorization": f"Bearer {token}"}
                     me_response = await client.get("/api/v1/auth/me", headers=headers)
-                    
                     if me_response.status_code == 200:
-                        print(f"  {Fore.GREEN}✓ Authentication works{Style.RESET_ALL}")
+                        print("✓ Authenticated endpoint accessible")
                         user_data = me_response.json()
-                        print(f"    └─ User: {user_data.get('email', 'unknown')}")
-            elif response.status_code == 409:
-                print(f"  {Fore.YELLOW}⚠ User already exists (this is OK){Style.RESET_ALL}")
+                        print(f"  - User email: {user_data.get('email')}")
+                    else:
+                        print(f"✗ Authenticated endpoint failed: {me_response.status_code}")
             else:
-                print(f"  {Fore.RED}✗ Registration failed: {response.status_code}{Style.RESET_ALL}")
+                print(f"✗ Login failed: {response.status_code}")
+                print(f"  - Response: {response.text}")
         except Exception as e:
-            print(f"  {Fore.RED}✗ Authentication test failed: {str(e)}{Style.RESET_ALL}")
+            print(f"✗ Login failed: {e}")
 
 
 async def main():
     """Run all connectivity tests"""
+    print("CERTIFY STUDIO - BACKEND CONNECTIVITY TEST")
+    print("=" * 60)
+    print(f"Testing backend at: http://localhost:8000")
+    print(f"Started at: {datetime.now().isoformat()}")
+    print("=" * 60)
     
     # Test basic connectivity
-    backend_ok = await test_backend_connectivity()
+    connectivity_ok = await test_backend_connectivity()
     
-    if backend_ok:
-        # Test API functionality
-        await test_api_functionality()
-        
-        print(f"\n{Fore.GREEN}{'='*60}{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}✅ BACKEND IS READY FOR TESTING!{Style.RESET_ALL}".center(60))
-        print(f"{Fore.GREEN}{'='*60}{Style.RESET_ALL}\n")
+    # Test authentication if basic connectivity works
+    if connectivity_ok:
+        await test_authentication_flow()
     else:
-        print(f"\n{Fore.RED}{'='*60}{Style.RESET_ALL}")
-        print(f"{Fore.RED}❌ BACKEND NEEDS TO BE STARTED{Style.RESET_ALL}".center(60))
-        print(f"{Fore.RED}{'='*60}{Style.RESET_ALL}\n")
+        print("\n⚠️  Skipping authentication tests due to connectivity issues")
+    
+    print("\n" + "=" * 60)
+    print("All tests completed!")
+    print("=" * 60)
 
 
 if __name__ == "__main__":

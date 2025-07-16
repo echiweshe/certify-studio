@@ -162,7 +162,7 @@ def create_application() -> FastAPI:
     app.include_router(api_router, prefix="/api")
     
     # Setup frontend connector for real-time updates
-    app = setup_frontend_connector(app)
+    setup_frontend_connector(app)
     
     # Root endpoint
     @app.get("/")

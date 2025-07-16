@@ -16,9 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 from .database.connection import get_db
-from .agents.core.base import AgentState
-from .services.agent_service import AgentService
-from .services.knowledge_graph_service import KnowledgeGraphService
+from .agents.core.autonomous_agent import AgentState
+from .services.agent_service import AgentService, agent_service
+from .knowledge.unified_graphrag import UnifiedGraphRAG
 
 
 class WebSocketManager:
@@ -260,14 +260,13 @@ class KnowledgeGraphStats(BaseModel):
 
 
 async def get_dashboard_stats(
-    db: AsyncSession = Depends(get_db),
-    agent_manager: AgentManager = Depends(lambda: AgentManager())
+    db: AsyncSession = Depends(get_db)
 ) -> DashboardStats:
     """Get real-time dashboard statistics"""
     
-    # Get agent statistics
-    agents = await agent_manager.get_all_agents()
-    active_agents = sum(1 for agent in agents if agent.state == AgentState.BUSY)
+    # Get agent statistics from agent service
+    agent_statuses = await agent_service.get_all_agent_statuses()
+    active_agents = sum(1 for status in agent_statuses if status["state"] == "busy")
     
     # Get generation statistics (mock data for now)
     total_generations_today = 47
@@ -276,10 +275,10 @@ async def get_dashboard_stats(
     active_users = 12
     
     # System health check
-    system_health = "healthy" if active_agents < len(agents) * 0.8 else "busy"
+    system_health = "healthy" if active_agents < len(agent_statuses) * 0.8 else "busy"
     
     return DashboardStats(
-        total_agents=len(agents),
+        total_agents=len(agent_statuses),
         active_agents=active_agents,
         total_generations_today=total_generations_today,
         average_generation_time=average_generation_time,
@@ -290,27 +289,26 @@ async def get_dashboard_stats(
 
 
 async def get_agent_statuses(
-    db: AsyncSession = Depends(get_db),
-    agent_manager: AgentManager = Depends(lambda: AgentManager())
+    db: AsyncSession = Depends(get_db)
 ) -> List[AgentStatus]:
     """Get detailed status of all agents"""
     
-    agents = await agent_manager.get_all_agents()
+    agent_statuses = await agent_service.get_all_agent_statuses()
     statuses = []
     
-    for agent in agents:
-        # Get agent metrics (mock data for demonstration)
-        status = AgentStatus(
-            agent_id=str(agent.id),
-            agent_type=agent.__class__.__name__,
-            state=agent.state.value,
-            current_task=getattr(agent, "current_task", None),
-            tasks_completed=getattr(agent, "tasks_completed", 0),
-            success_rate=getattr(agent, "success_rate", 0.95),
-            average_processing_time=getattr(agent, "avg_processing_time", 30.5),
-            last_active=getattr(agent, "last_active", datetime.utcnow())
+    for status in agent_statuses:
+        # Convert to AgentStatus model
+        agent_status = AgentStatus(
+            agent_id=status["id"],
+            agent_type=status["type"],
+            state=status["state"],
+            current_task=status.get("current_task"),
+            tasks_completed=status.get("tasks_completed", 0),
+            success_rate=status.get("success_rate", 0.95),
+            average_processing_time=status.get("metrics", {}).get("avg_processing_time", 30.5),
+            last_active=status.get("last_active", datetime.utcnow())
         )
-        statuses.append(status)
+        statuses.append(agent_status)
     
     return statuses
 
@@ -335,18 +333,21 @@ async def get_collaboration_metrics(
 
 
 async def get_knowledge_graph_stats(
-    db: AsyncSession = Depends(get_db),
-    kg_service: KnowledgeGraphService = Depends(lambda: KnowledgeGraphService())
+    db: AsyncSession = Depends(get_db)
 ) -> KnowledgeGraphStats:
-    """Get knowledge graph statistics"""
+    """Get knowledge graph statistics from UnifiedGraphRAG"""
     
-    stats = await kg_service.get_statistics()
+    # Initialize UnifiedGraphRAG if needed
+    graph_rag = UnifiedGraphRAG()
+    
+    # Get statistics from the unified system
+    stats = await graph_rag.get_graph_statistics()
     
     return KnowledgeGraphStats(
         total_nodes=stats.get("total_nodes", 0),
         total_relationships=stats.get("total_relationships", 0),
-        domains_covered=stats.get("domains_covered", 0),
-        concepts_extracted=stats.get("concepts_extracted", 0),
+        domains_covered=stats.get("domains", 0),
+        concepts_extracted=stats.get("concepts", 0),
         recent_updates=stats.get("recent_updates", [])[:10]  # Last 10 updates
     )
 

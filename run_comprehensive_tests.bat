@@ -1,24 +1,21 @@
 @echo off
-echo ========================================
-echo Running Comprehensive Test Suite
-echo ========================================
+echo =====================================
+echo Certify Studio - Comprehensive Tests
+echo =====================================
 echo.
 
-cd /d C:\ZBDuo_Share\Labs\src\BttlnsCldMCP\certify-studio
+REM Activate virtual environment
+call uv sync
 
-echo Starting comprehensive test runner...
-echo This will run all test categories:
-echo - Unit Tests
-echo - Integration Tests
-echo - End-to-End Tests
-echo - Performance Tests
+REM Install test dependencies if needed
+echo Installing test dependencies...
+uv pip install pytest pytest-asyncio pytest-json-report httpx websockets aiofiles
+
+REM Run comprehensive tests
 echo.
-
-uv run python tests\run_comprehensive_tests.py
+echo Starting comprehensive test suite...
+uv run python tests/run_comprehensive_tests.py
 
 echo.
-echo ========================================
-echo All Tests Complete!
-echo Check tests\outputs\ for detailed reports
-echo ========================================
+echo Test suite completed!
 pause

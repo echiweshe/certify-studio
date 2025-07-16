@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { User } from '@/types'
-import { authService } from '@/services/auth'
+import api from '@/services/api'
 
 interface AuthState {
   user: User | null
@@ -25,18 +25,23 @@ export const useAuthStore = create<AuthState>()(
       login: async (email: string, password: string) => {
         set({ isLoading: true })
         try {
-          const response = await authService.login(email, password)
+          const response = await api.login(email, password)
+          
+          // Get user details
+          const userResponse = await api.getCurrentUser()
+          
           set({
-            user: response.user,
-            token: response.token,
+            user: {
+              id: userResponse.id || '1',
+              email: userResponse.email,
+              name: userResponse.full_name || userResponse.email.split('@')[0],
+              role: userResponse.role || 'user',
+              avatar: userResponse.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(userResponse.full_name || userResponse.email)}&background=6366f1&color=fff`,
+            },
+            token: response.access_token,
             isAuthenticated: true,
             isLoading: false,
           })
-          
-          // Store token for persistence
-          if (response.token) {
-            localStorage.setItem('auth-token', response.token)
-          }
         } catch (error) {
           set({ isLoading: false })
           throw error
@@ -44,32 +49,43 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: () => {
-        authService.logout()
-        localStorage.removeItem('auth-token')
-        localStorage.removeItem('auth-storage')
+        api.logout()
         set({
           user: null,
           token: null,
           isAuthenticated: false,
         })
+        window.location.href = '/login'
       },
 
       checkAuth: async () => {
-        const token = get().token || localStorage.getItem('auth-token')
+        const token = localStorage.getItem('auth_token')
         if (!token) {
           set({ isAuthenticated: false })
           return
         }
 
         try {
-          const user = await authService.validateToken(token)
+          const user = await api.getCurrentUser()
           set({ 
-            user, 
+            user: {
+              id: user.id || '1',
+              email: user.email,
+              name: user.full_name || user.email.split('@')[0],
+              role: user.role || 'user',
+              avatar: user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.full_name || user.email)}&background=6366f1&color=fff`,
+            },
             isAuthenticated: true,
             token 
           })
         } catch {
-          get().logout()
+          // Token is invalid
+          localStorage.removeItem('auth_token')
+          set({ 
+            isAuthenticated: false,
+            user: null,
+            token: null
+          })
         }
       },
 
@@ -87,6 +103,12 @@ export const useAuthStore = create<AuthState>()(
         user: state.user,
         isAuthenticated: state.isAuthenticated 
       }),
+      onRehydrateStorage: () => (state) => {
+        // After rehydration, check if the stored auth is still valid
+        if (state?.token && state?.isAuthenticated) {
+          state.checkAuth()
+        }
+      },
     }
   )
 )

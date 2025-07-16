@@ -1,407 +1,415 @@
 """
 Comprehensive Test Runner for Certify Studio
 
-This test runner executes all test suites in the correct order and provides
-detailed reporting of test results with beautiful colored output.
+This script runs all tests (unit, integration, e2e) with colored output
+and generates a comprehensive test report.
 """
 
-import os
+import asyncio
 import sys
+import os
 import time
 import json
-import asyncio
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Any
 import subprocess
-import pytest
-from colorama import init, Fore, Style, Back
 
-# Initialize colorama for Windows
-init()
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+# Color codes for terminal output
+class Colors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
 
 
 class TestRunner:
-    """Comprehensive test runner with beautiful reporting"""
+    """Comprehensive test runner with reporting"""
     
     def __init__(self):
-        self.start_time = None
-        self.test_results = {
-            "timestamp": datetime.now().isoformat(),
-            "suites": [],
-            "summary": {}
-        }
-        self.output_dir = Path("tests/outputs")
-        self.output_dir.mkdir(exist_ok=True)
-    
-    def print_header(self):
-        """Print beautiful header"""
-        print(f"\n{Fore.CYAN}{'='*80}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}║{Style.RESET_ALL} {Fore.WHITE}{Style.BRIGHT}CERTIFY STUDIO - COMPREHENSIVE TEST SUITE{Style.RESET_ALL} {Fore.CYAN}║{Style.RESET_ALL}".center(90))
-        print(f"{Fore.CYAN}{'='*80}{Style.RESET_ALL}")
-        print(f"{Fore.YELLOW}🚀 AI-Powered Certification Content Generation Platform{Style.RESET_ALL}".center(80))
-        print(f"{Fore.CYAN}{'='*80}{Style.RESET_ALL}\n")
-    
-    def print_section(self, title: str, icon: str = "📋"):
-        """Print section header"""
-        print(f"\n{Fore.GREEN}{icon} {title}{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}{'-' * (len(title) + 4)}{Style.RESET_ALL}")
-    
-    def run_unit_tests(self) -> Tuple[int, int]:
-        """Run unit tests"""
-        self.print_section("UNIT TESTS", "🧪")
-        
-        test_files = [
-            "tests/unit/test_agents.py",
-            "tests/unit/test_models.py",
-            "tests/unit/test_services.py",
-            "tests/unit/test_utils.py"
-        ]
-        
-        passed = 0
-        failed = 0
-        
-        for test_file in test_files:
-            if Path(test_file).exists():
-                print(f"{Fore.BLUE}Running {test_file}...{Style.RESET_ALL}")
-                result = pytest.main([test_file, "-v", "--tb=short", "-q"])
-                
-                if result == 0:
-                    passed += 1
-                    print(f"{Fore.GREEN}✓ {test_file} passed{Style.RESET_ALL}")
-                else:
-                    failed += 1
-                    print(f"{Fore.RED}✗ {test_file} failed{Style.RESET_ALL}")
-            else:
-                print(f"{Fore.YELLOW}⚠ {test_file} not found, creating...{Style.RESET_ALL}")
-                self._create_unit_test_template(test_file)
-        
-        return passed, failed
-    
-    def run_integration_tests(self) -> Tuple[int, int]:
-        """Run integration tests"""
-        self.print_section("INTEGRATION TESTS", "🔧")
-        
-        test_files = [
-            "tests/integration/test_api_integration.py",
-            "tests/integration/test_agent_collaboration.py",
-            "tests/integration/test_database_integration.py",
-            "tests/integration/test_knowledge_graph.py"
-        ]
-        
-        passed = 0
-        failed = 0
-        
-        for test_file in test_files:
-            if Path(test_file).exists():
-                print(f"{Fore.BLUE}Running {test_file}...{Style.RESET_ALL}")
-                result = pytest.main([test_file, "-v", "--tb=short", "-q"])
-                
-                if result == 0:
-                    passed += 1
-                    print(f"{Fore.GREEN}✓ {test_file} passed{Style.RESET_ALL}")
-                else:
-                    failed += 1
-                    print(f"{Fore.RED}✗ {test_file} failed{Style.RESET_ALL}")
-            else:
-                print(f"{Fore.YELLOW}⚠ {test_file} not found, creating...{Style.RESET_ALL}")
-                self._create_integration_test_template(test_file)
-        
-        return passed, failed
-    
-    def run_e2e_tests(self) -> Tuple[int, int]:
-        """Run end-to-end tests"""
-        self.print_section("END-TO-END TESTS", "🎯")
-        
-        # Special handling for AWS test
-        print(f"{Fore.MAGENTA}🎯 Running AWS AI Practitioner Complete Workflow Test...{Style.RESET_ALL}")
-        
-        test_file = "tests/e2e/test_aws_ai_practitioner_complete.py"
-        result = pytest.main([test_file, "-v", "-s", "--tb=short"])
-        
-        if result == 0:
-            print(f"{Fore.GREEN}✓ AWS AI Practitioner E2E test passed!{Style.RESET_ALL}")
-            return 1, 0
-        else:
-            print(f"{Fore.RED}✗ AWS AI Practitioner E2E test failed{Style.RESET_ALL}")
-            return 0, 1
-    
-    def run_performance_tests(self) -> Tuple[int, int]:
-        """Run performance tests"""
-        self.print_section("PERFORMANCE TESTS", "⚡")
-        
-        print(f"{Fore.BLUE}Running performance benchmarks...{Style.RESET_ALL}")
-        
-        # Create performance test if it doesn't exist
-        perf_test_file = "tests/performance/test_performance.py"
-        if not Path(perf_test_file).exists():
-            self._create_performance_test()
-        
-        result = pytest.main([perf_test_file, "-v", "--tb=short"])
-        
-        if result == 0:
-            print(f"{Fore.GREEN}✓ Performance tests passed{Style.RESET_ALL}")
-            return 1, 0
-        else:
-            print(f"{Fore.RED}✗ Performance tests failed{Style.RESET_ALL}")
-            return 0, 1
-    
-    def check_code_coverage(self):
-        """Check code coverage"""
-        self.print_section("CODE COVERAGE", "📊")
-        
-        try:
-            # Run coverage
-            subprocess.run([
-                sys.executable, "-m", "coverage", "run", 
-                "-m", "pytest", "tests/", "-q"
-            ], capture_output=True)
-            
-            # Generate report
-            result = subprocess.run([
-                sys.executable, "-m", "coverage", "report"
-            ], capture_output=True, text=True)
-            
-            if result.returncode == 0:
-                print(result.stdout)
-                
-                # Extract coverage percentage
-                lines = result.stdout.split('\n')
-                for line in lines:
-                    if "TOTAL" in line:
-                        parts = line.split()
-                        coverage = parts[-1]
-                        coverage_value = int(coverage.rstrip('%'))
-                        
-                        if coverage_value >= 80:
-                            print(f"{Fore.GREEN}✓ Code coverage: {coverage}{Style.RESET_ALL}")
-                        elif coverage_value >= 60:
-                            print(f"{Fore.YELLOW}⚠ Code coverage: {coverage}{Style.RESET_ALL}")
-                        else:
-                            print(f"{Fore.RED}✗ Code coverage: {coverage}{Style.RESET_ALL}")
-            else:
-                print(f"{Fore.YELLOW}⚠ Coverage not available{Style.RESET_ALL}")
-        except Exception as e:
-            print(f"{Fore.YELLOW}⚠ Could not generate coverage report: {e}{Style.RESET_ALL}")
-    
-    def generate_test_report(self, results: Dict[str, Tuple[int, int]]):
-        """Generate comprehensive test report"""
-        self.print_section("TEST REPORT", "📄")
-        
-        total_passed = sum(r[0] for r in results.values())
-        total_failed = sum(r[1] for r in results.values())
-        total_tests = total_passed + total_failed
-        
-        # Calculate success rate
-        success_rate = (total_passed / total_tests * 100) if total_tests > 0 else 0
-        
-        # Print summary table
-        print(f"\n{Fore.CYAN}Test Suite Results:{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{'-'*50}{Style.RESET_ALL}")
-        print(f"{'Suite':<20} {'Passed':<10} {'Failed':<10} {'Status':<10}")
-        print(f"{'-'*50}")
-        
-        for suite, (passed, failed) in results.items():
-            status = f"{Fore.GREEN}PASS{Style.RESET_ALL}" if failed == 0 else f"{Fore.RED}FAIL{Style.RESET_ALL}"
-            print(f"{suite:<20} {passed:<10} {failed:<10} {status}")
-        
-        print(f"{'-'*50}")
-        print(f"{'TOTAL':<20} {total_passed:<10} {total_failed:<10}")
-        
-        # Print summary
-        print(f"\n{Fore.CYAN}Summary:{Style.RESET_ALL}")
-        print(f"Total Tests: {total_tests}")
-        print(f"Passed: {Fore.GREEN}{total_passed}{Style.RESET_ALL}")
-        print(f"Failed: {Fore.RED}{total_failed}{Style.RESET_ALL}")
-        print(f"Success Rate: {self._get_colored_percentage(success_rate)}%")
-        
-        # Save report to file
-        report_path = self.output_dir / f"test_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        report_data = {
-            "timestamp": datetime.now().isoformat(),
-            "duration_seconds": time.time() - self.start_time,
-            "results": {k: {"passed": v[0], "failed": v[1]} for k, v in results.items()},
+        self.results = {
+            "start_time": datetime.now().isoformat(),
+            "test_suites": [],
             "summary": {
-                "total_tests": total_tests,
-                "passed": total_passed,
-                "failed": total_failed,
-                "success_rate": success_rate
+                "total_suites": 0,
+                "passed_suites": 0,
+                "failed_suites": 0,
+                "total_tests": 0,
+                "passed_tests": 0,
+                "failed_tests": 0,
+                "skipped_tests": 0,
+                "total_time": 0
             }
         }
-        
-        with open(report_path, "w") as f:
-            json.dump(report_data, f, indent=2)
-        
-        print(f"\n{Fore.CYAN}Report saved to: {report_path}{Style.RESET_ALL}")
-        
-        # Final status
-        if total_failed == 0:
-            print(f"\n{Back.GREEN}{Fore.WHITE} ✅ ALL TESTS PASSED! {Style.RESET_ALL}")
-        else:
-            print(f"\n{Back.RED}{Fore.WHITE} ❌ SOME TESTS FAILED {Style.RESET_ALL}")
-        
-        return total_failed == 0
+        self.output_dir = Path("tests/outputs/test_reports")
+        self.output_dir.mkdir(parents=True, exist_ok=True)
     
-    def _get_colored_percentage(self, percentage: float) -> str:
-        """Get colored percentage based on value"""
-        if percentage >= 90:
-            return f"{Fore.GREEN}{percentage:.1f}{Style.RESET_ALL}"
-        elif percentage >= 70:
-            return f"{Fore.YELLOW}{percentage:.1f}{Style.RESET_ALL}"
-        else:
-            return f"{Fore.RED}{percentage:.1f}{Style.RESET_ALL}"
+    def print_header(self, text: str):
+        """Print a formatted header"""
+        print(f"\n{Colors.HEADER}{'=' * 80}{Colors.ENDC}")
+        print(f"{Colors.HEADER}{Colors.BOLD}{text.center(80)}{Colors.ENDC}")
+        print(f"{Colors.HEADER}{'=' * 80}{Colors.ENDC}\n")
     
-    def _create_unit_test_template(self, test_file: str):
-        """Create unit test template"""
-        Path(test_file).parent.mkdir(parents=True, exist_ok=True)
-        
-        template = '''"""Unit test template"""
-import pytest
-from certify_studio.core import *
-
-class TestUnit:
-    def test_example(self):
-        assert True
-'''
-        
-        with open(test_file, "w") as f:
-            f.write(template)
+    def print_section(self, text: str):
+        """Print a section header"""
+        print(f"\n{Colors.OKCYAN}{'-' * 60}{Colors.ENDC}")
+        print(f"{Colors.OKCYAN}{text}{Colors.ENDC}")
+        print(f"{Colors.OKCYAN}{'-' * 60}{Colors.ENDC}")
     
-    def _create_integration_test_template(self, test_file: str):
-        """Create integration test template"""
-        Path(test_file).parent.mkdir(parents=True, exist_ok=True)
-        
-        template = '''"""Integration test template"""
-import pytest
-import asyncio
-from certify_studio.core import *
-
-class TestIntegration:
-    @pytest.mark.asyncio
-    async def test_example(self):
-        assert True
-'''
-        
-        with open(test_file, "w") as f:
-            f.write(template)
+    def print_success(self, text: str):
+        """Print success message"""
+        print(f"{Colors.OKGREEN}✓ {text}{Colors.ENDC}")
     
-    def _create_performance_test(self):
-        """Create performance test"""
-        perf_dir = Path("tests/performance")
-        perf_dir.mkdir(exist_ok=True)
-        
-        perf_test = '''"""Performance tests for Certify Studio"""
-import pytest
-import time
-import asyncio
-from httpx import AsyncClient
-
-class TestPerformance:
-    @pytest.mark.asyncio
-    async def test_api_response_time(self):
-        """Test API response times"""
-        async with AsyncClient(base_url="http://localhost:8000") as client:
-            times = []
-            
-            for _ in range(10):
-                start = time.time()
-                response = await client.get("/api/v1/info")
-                elapsed = time.time() - start
-                times.append(elapsed)
-                
-                assert response.status_code == 200
-                assert elapsed < 1.0  # Should respond in under 1 second
-            
-            avg_time = sum(times) / len(times)
-            assert avg_time < 0.5  # Average should be under 500ms
+    def print_failure(self, text: str):
+        """Print failure message"""
+        print(f"{Colors.FAIL}✗ {text}{Colors.ENDC}")
     
-    @pytest.mark.asyncio
-    async def test_concurrent_requests(self):
-        """Test handling concurrent requests"""
-        async with AsyncClient(base_url="http://localhost:8000") as client:
-            # Send 50 concurrent requests
-            tasks = []
-            for _ in range(50):
-                task = client.get("/health")
-                tasks.append(task)
-            
-            start = time.time()
-            responses = await asyncio.gather(*tasks)
-            elapsed = time.time() - start
-            
-            # All should succeed
-            assert all(r.status_code == 200 for r in responses)
-            
-            # Should complete within reasonable time
-            assert elapsed < 5.0  # 50 requests in under 5 seconds
-'''
-        
-        with open(perf_dir / "test_performance.py", "w") as f:
-            f.write(perf_test)
-        
-        with open(perf_dir / "__init__.py", "w") as f:
-            f.write("")
+    def print_warning(self, text: str):
+        """Print warning message"""
+        print(f"{Colors.WARNING}⚠ {text}{Colors.ENDC}")
     
-    def run_all_tests(self):
-        """Run all test suites"""
-        self.start_time = time.time()
-        self.print_header()
+    def print_info(self, text: str):
+        """Print info message"""
+        print(f"{Colors.OKBLUE}ℹ {text}{Colors.ENDC}")
+    
+    async def check_prerequisites(self) -> bool:
+        """Check if all prerequisites are met"""
+        self.print_section("Checking Prerequisites")
+        
+        all_good = True
         
         # Check if backend is running
-        self.print_section("SYSTEM CHECK", "🔍")
         try:
             import httpx
-            response = httpx.get("http://localhost:8000/health")
-            if response.status_code == 200:
-                print(f"{Fore.GREEN}✓ Backend is running and healthy{Style.RESET_ALL}")
-            else:
-                print(f"{Fore.RED}✗ Backend returned status {response.status_code}{Style.RESET_ALL}")
-                return False
+            async with httpx.AsyncClient() as client:
+                response = await client.get("http://localhost:8000/health")
+                if response.status_code == 200:
+                    self.print_success("Backend is running")
+                else:
+                    self.print_failure("Backend returned non-200 status")
+                    all_good = False
         except Exception as e:
-            print(f"{Fore.RED}✗ Backend is not running! Please start it first.{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}Run: uv run uvicorn certify_studio.main:app --reload{Style.RESET_ALL}")
-            return False
+            self.print_failure(f"Backend is not accessible: {e}")
+            all_good = False
+        
+        # Check if test files exist
+        test_files = [
+            Path("downloads/aws/AIF-C01/AWS-Certified-AI-Practitioner_Exam-Guide.pdf"),
+            Path("downloads/aws/AIF-C01/Sections-1-to-7-AI1-C01-Official-Course.pdf")
+        ]
+        
+        for file in test_files:
+            if file.exists():
+                self.print_success(f"Test file exists: {file.name}")
+            else:
+                self.print_warning(f"Test file missing: {file}")
+                all_good = False
+        
+        # Check Python packages
+        required_packages = ["pytest", "httpx", "websockets", "aiofiles"]
+        for package in required_packages:
+            try:
+                __import__(package)
+                self.print_success(f"Package installed: {package}")
+            except ImportError:
+                self.print_failure(f"Package missing: {package}")
+                all_good = False
+        
+        return all_good
+    
+    def run_test_suite(self, suite_name: str, test_path: str, pytest_args: List[str] = None) -> Dict[str, Any]:
+        """Run a test suite using pytest"""
+        self.print_section(f"Running {suite_name}")
+        
+        start_time = time.time()
+        
+        # Prepare pytest command
+        cmd = ["python", "-m", "pytest", test_path]
+        if pytest_args:
+            cmd.extend(pytest_args)
+        else:
+            cmd.extend(["-v", "--tb=short", "--color=yes"])
+        
+        # Add JSON report output
+        report_file = self.output_dir / f"{suite_name.lower().replace(' ', '_')}_report.json"
+        cmd.extend([f"--json-report", f"--json-report-file={report_file}"])
+        
+        # Run tests
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        duration = time.time() - start_time
+        
+        # Parse results
+        suite_result = {
+            "name": suite_name,
+            "path": test_path,
+            "duration": duration,
+            "return_code": result.returncode,
+            "passed": result.returncode == 0
+        }
+        
+        # Try to parse JSON report if available
+        if report_file.exists():
+            try:
+                with open(report_file) as f:
+                    json_report = json.load(f)
+                    suite_result["details"] = {
+                        "total": json_report["summary"]["total"],
+                        "passed": json_report["summary"]["passed"],
+                        "failed": json_report["summary"]["failed"],
+                        "skipped": json_report["summary"]["skipped"]
+                    }
+            except:
+                # Fallback to parsing output
+                output_lines = result.stdout.split('\n')
+                for line in output_lines:
+                    if "passed" in line and "failed" in line:
+                        # Try to extract test counts from pytest output
+                        parts = line.split()
+                        suite_result["details"] = {"parsed_from_output": line.strip()}
+        
+        # Print results
+        if suite_result["passed"]:
+            self.print_success(f"{suite_name} completed in {duration:.2f}s")
+        else:
+            self.print_failure(f"{suite_name} failed after {duration:.2f}s")
+            if result.stderr:
+                print(f"\nErrors:\n{result.stderr}")
+        
+        return suite_result
+    
+    async def run_unit_tests(self) -> Dict[str, Any]:
+        """Run unit tests"""
+        return self.run_test_suite(
+            "Unit Tests",
+            "tests/unit",
+            ["-v", "-k", "not integration and not e2e"]
+        )
+    
+    async def run_integration_tests(self) -> Dict[str, Any]:
+        """Run integration tests"""
+        return self.run_test_suite(
+            "Integration Tests",
+            "tests/integration",
+            ["-v"]
+        )
+    
+    async def run_e2e_tests(self) -> Dict[str, Any]:
+        """Run end-to-end tests"""
+        return self.run_test_suite(
+            "E2E Tests",
+            "tests/e2e",
+            ["-v", "-s", "--timeout=600"]
+        )
+    
+    async def run_performance_tests(self) -> Dict[str, Any]:
+        """Run performance tests"""
+        self.print_section("Running Performance Tests")
+        
+        start_time = time.time()
+        perf_results = {
+            "name": "Performance Tests",
+            "duration": 0,
+            "passed": True,
+            "metrics": {}
+        }
+        
+        try:
+            import httpx
+            
+            # Test API response times
+            async with httpx.AsyncClient() as client:
+                endpoints = ["/", "/health", "/api/v1/info"]
+                
+                for endpoint in endpoints:
+                    times = []
+                    for _ in range(10):
+                        start = time.time()
+                        response = await client.get(f"http://localhost:8000{endpoint}")
+                        times.append(time.time() - start)
+                    
+                    avg_time = sum(times) / len(times)
+                    perf_results["metrics"][endpoint] = {
+                        "avg_response_time": avg_time,
+                        "min_response_time": min(times),
+                        "max_response_time": max(times)
+                    }
+                    
+                    if avg_time < 0.1:  # 100ms threshold
+                        self.print_success(f"{endpoint}: {avg_time*1000:.2f}ms average")
+                    else:
+                        self.print_warning(f"{endpoint}: {avg_time*1000:.2f}ms average (slow)")
+            
+        except Exception as e:
+            self.print_failure(f"Performance tests failed: {e}")
+            perf_results["passed"] = False
+            perf_results["error"] = str(e)
+        
+        perf_results["duration"] = time.time() - start_time
+        return perf_results
+    
+    def generate_report(self):
+        """Generate comprehensive test report"""
+        self.print_header("Test Report")
+        
+        # Calculate summary
+        total_duration = sum(suite.get("duration", 0) for suite in self.results["test_suites"])
+        self.results["summary"]["total_time"] = total_duration
+        self.results["summary"]["total_suites"] = len(self.results["test_suites"])
+        self.results["summary"]["passed_suites"] = sum(1 for s in self.results["test_suites"] if s.get("passed", False))
+        self.results["summary"]["failed_suites"] = self.results["summary"]["total_suites"] - self.results["summary"]["passed_suites"]
+        
+        # Print summary
+        print(f"Total Test Suites: {self.results['summary']['total_suites']}")
+        print(f"Passed Suites: {Colors.OKGREEN}{self.results['summary']['passed_suites']}{Colors.ENDC}")
+        print(f"Failed Suites: {Colors.FAIL}{self.results['summary']['failed_suites']}{Colors.ENDC}")
+        print(f"Total Duration: {total_duration:.2f}s")
+        
+        # Detailed results per suite
+        print("\nDetailed Results:")
+        for suite in self.results["test_suites"]:
+            status = f"{Colors.OKGREEN}PASSED{Colors.ENDC}" if suite.get("passed", False) else f"{Colors.FAIL}FAILED{Colors.ENDC}"
+            print(f"\n  {suite['name']}: {status} ({suite['duration']:.2f}s)")
+            if "details" in suite:
+                details = suite["details"]
+                if isinstance(details, dict) and "total" in details:
+                    print(f"    Tests: {details['total']} total, {details['passed']} passed, {details['failed']} failed")
+        
+        # Save report
+        report_file = self.output_dir / f"test_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        with open(report_file, "w") as f:
+            json.dump(self.results, f, indent=2)
+        
+        print(f"\nDetailed report saved to: {report_file}")
+        
+        # Create HTML report
+        self.generate_html_report(report_file)
+    
+    def generate_html_report(self, json_report_path: Path):
+        """Generate an HTML report from the JSON data"""
+        html_path = json_report_path.with_suffix('.html')
+        
+        html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Certify Studio Test Report</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 20px; }}
+        .header {{ background-color: #2c3e50; color: white; padding: 20px; border-radius: 5px; }}
+        .summary {{ background-color: #ecf0f1; padding: 15px; margin: 20px 0; border-radius: 5px; }}
+        .passed {{ color: #27ae60; font-weight: bold; }}
+        .failed {{ color: #e74c3c; font-weight: bold; }}
+        .suite {{ background-color: #f8f9fa; padding: 10px; margin: 10px 0; border-radius: 5px; }}
+        table {{ width: 100%; border-collapse: collapse; }}
+        th, td {{ padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Certify Studio Test Report</h1>
+        <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+    </div>
+    
+    <div class="summary">
+        <h2>Summary</h2>
+        <table>
+            <tr><td>Total Test Suites:</td><td>{self.results['summary']['total_suites']}</td></tr>
+            <tr><td>Passed:</td><td class="passed">{self.results['summary']['passed_suites']}</td></tr>
+            <tr><td>Failed:</td><td class="failed">{self.results['summary']['failed_suites']}</td></tr>
+            <tr><td>Total Duration:</td><td>{self.results['summary']['total_time']:.2f}s</td></tr>
+        </table>
+    </div>
+    
+    <h2>Test Suites</h2>
+    {"".join(self._generate_suite_html(suite) for suite in self.results['test_suites'])}
+</body>
+</html>
+"""
+        
+        with open(html_path, "w") as f:
+            f.write(html_content)
+        
+        print(f"HTML report saved to: {html_path}")
+    
+    def _generate_suite_html(self, suite: Dict[str, Any]) -> str:
+        """Generate HTML for a test suite"""
+        status_class = "passed" if suite.get("passed", False) else "failed"
+        status_text = "PASSED" if suite.get("passed", False) else "FAILED"
+        
+        details_html = ""
+        if "details" in suite and isinstance(suite["details"], dict):
+            details = suite["details"]
+            if "total" in details:
+                details_html = f"""
+                <p>Total: {details['total']}, 
+                   Passed: <span class="passed">{details['passed']}</span>, 
+                   Failed: <span class="failed">{details['failed']}</span>,
+                   Skipped: {details.get('skipped', 0)}</p>
+                """
+        
+        return f"""
+        <div class="suite">
+            <h3>{suite['name']} - <span class="{status_class}">{status_text}</span></h3>
+            <p>Duration: {suite['duration']:.2f}s</p>
+            {details_html}
+        </div>
+        """
+    
+    async def run_all_tests(self):
+        """Run all test suites"""
+        self.print_header("CERTIFY STUDIO - COMPREHENSIVE TEST SUITE")
+        
+        # Check prerequisites
+        if not await self.check_prerequisites():
+            self.print_warning("\nSome prerequisites are not met. Tests may fail.")
+            response = input("\nContinue anyway? (y/n): ")
+            if response.lower() != 'y':
+                print("Test run cancelled.")
+                return
         
         # Run test suites
-        results = {}
+        test_suites = [
+            ("Unit Tests", self.run_unit_tests),
+            ("Integration Tests", self.run_integration_tests),
+            ("Performance Tests", self.run_performance_tests),
+            ("E2E Tests", self.run_e2e_tests),
+        ]
         
-        # Unit tests
-        results["Unit Tests"] = self.run_unit_tests()
+        for suite_name, suite_func in test_suites:
+            try:
+                result = await suite_func()
+                self.results["test_suites"].append(result)
+            except Exception as e:
+                self.print_failure(f"{suite_name} crashed: {e}")
+                self.results["test_suites"].append({
+                    "name": suite_name,
+                    "passed": False,
+                    "error": str(e),
+                    "duration": 0
+                })
         
-        # Integration tests
-        results["Integration Tests"] = self.run_integration_tests()
+        # Generate report
+        self.generate_report()
         
-        # E2E tests
-        results["E2E Tests"] = self.run_e2e_tests()
-        
-        # Performance tests
-        results["Performance Tests"] = self.run_performance_tests()
-        
-        # Code coverage
-        self.check_code_coverage()
-        
-        # Generate final report
-        success = self.generate_test_report(results)
-        
-        # Print execution time
-        duration = time.time() - self.start_time
-        print(f"\n{Fore.CYAN}Total execution time: {duration:.2f} seconds{Style.RESET_ALL}")
-        
-        return success
+        # Return exit code
+        return 0 if self.results["summary"]["failed_suites"] == 0 else 1
 
 
-def main():
+async def main():
     """Main entry point"""
     runner = TestRunner()
-    success = runner.run_all_tests()
-    
-    # Exit with appropriate code
-    sys.exit(0 if success else 1)
+    exit_code = await runner.run_all_tests()
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
