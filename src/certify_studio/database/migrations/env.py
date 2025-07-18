@@ -37,9 +37,12 @@ target_metadata = Base.metadata
 
 def get_url() -> str:
     """Get database URL from settings."""
-    return settings.DATABASE_URL.replace(
-        "postgresql+asyncpg://", "postgresql://"
-    )
+    # For Alembic migrations, we need the async URL
+    db_url = settings.DATABASE_URL
+    if not db_url.startswith("postgresql+asyncpg://"):
+        # Convert regular postgresql:// to postgresql+asyncpg://
+        db_url = db_url.replace("postgresql://", "postgresql+asyncpg://")
+    return db_url
 
 
 def run_migrations_offline() -> None:

@@ -156,12 +156,8 @@ def create_app() -> FastAPI:
     # Setup exception handlers
     setup_exception_handlers(app)
     
-    # Include routers
-    app.include_router(auth_router, prefix="/api")
-    app.include_router(generation_router, prefix="/api")
-    app.include_router(domains_router, prefix="/api")
-    app.include_router(quality_router, prefix="/api")
-    app.include_router(export_router, prefix="/api")
+    # Include routers - they're already in api_router, so just include that
+    # Don't include individual routers again
     
     # WebSocket endpoint
     app.add_api_websocket_route("/api/ws", websocket_endpoint)

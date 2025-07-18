@@ -1,20 +1,29 @@
 @echo off
+echo Initializing Database with Admin User...
 echo ========================================
-echo CERTIFY STUDIO - DATABASE INITIALIZATION
-echo ========================================
-echo.
 
-cd /d C:\ZBDuo_Share\Labs\src\BttlnsCldMCP\certify-studio
+cd /d C:\ZBDuo_Share\Labs\src\BttlnsCldMCP\certify-studio-github-pull
 
-echo Installing database dependencies...
-uv pip install aiosqlite
+echo Activating virtual environment...
+call .venv\Scripts\activate.bat
 
 echo.
-echo Initializing database...
-uv run python init_database.py
+echo Running database migrations...
+set PYTHONPATH=%cd%\src
+alembic upgrade head
+
+echo.
+echo Creating admin user and roles...
+python src\certify_studio\database\migrations\init_db.py
 
 echo.
 echo ========================================
-echo Database initialization complete!
+echo Database initialized!
+echo.
+echo Login credentials:
+echo   Email: admin@certifystudio.com
+echo   Password: admin123
+echo.
+echo ⚠️  IMPORTANT: Change the admin password after first login!
 echo ========================================
 pause
