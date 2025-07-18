@@ -201,59 +201,107 @@ def create_application() -> FastAPI:
     
     @app.get("/api/v1/dashboard/agents")
     async def dashboard_agents():
-        """Return agent statuses in array format for frontend."""
-        return [
-            {
-                "agent_id": "domain-extractor",
-                "agent_type": "extraction", 
-                "state": "idle",
-                "current_task": None,
-                "tasks_completed": 42,
-                "success_rate": 0.95,
-                "average_processing_time": 3.2,
-                "last_active": "2025-01-20T10:30:00Z"
-            },
-            {
-                "agent_id": "animation-choreographer",
-                "agent_type": "content",
-                "state": "thinking", 
-                "current_task": "Generating AWS VPC animation",
-                "tasks_completed": 38,
-                "success_rate": 0.92,
-                "average_processing_time": 5.8,
-                "last_active": "2025-01-20T10:25:00Z"
-            },
-            {
-                "agent_id": "diagram-generator",
-                "agent_type": "visual",
-                "state": "executing",
-                "current_task": "Creating architecture diagram",
-                "tasks_completed": 56,
-                "success_rate": 0.98,
-                "average_processing_time": 2.1,
-                "last_active": "2025-01-20T10:28:00Z"
-            },
-            {
-                "agent_id": "quality-assurance",
-                "agent_type": "validation",
-                "state": "idle",
-                "current_task": None,
-                "tasks_completed": 120,
-                "success_rate": 0.99,
-                "average_processing_time": 1.5,
-                "last_active": "2025-01-20T10:32:00Z"
-            },
-            {
-                "agent_id": "pedagogical-reasoning",
-                "agent_type": "educational",
-                "state": "idle",
-                "current_task": None,
-                "tasks_completed": 65,
-                "success_rate": 0.91,
-                "average_processing_time": 2.8,
-                "last_active": "2025-01-20T10:15:00Z"
-            }
-        ]
+        return {
+            "agents": [
+                {
+                    "id": "1",
+                    "name": "DomainExtractor",
+                    "status": "idle",
+                    "type": "extraction",
+                    "description": "Extracts knowledge domains from certification materials",
+                    "currentTask": None,
+                    "capabilities": [
+                        {"name": "PDF Parsing", "level": 95},
+                        {"name": "Concept Extraction", "level": 90},
+                        {"name": "Knowledge Graphs", "level": 85}
+                    ],
+                    "performance": {
+                        "averageTime": 3.2,
+                        "successRate": 0.95,
+                        "tasksCompleted": 42
+                    },
+                    "metrics": {
+                        "tasksCompleted": 42,
+                        "successRate": 0.95,
+                        "avgProcessingTime": 3.2
+                    },
+                    "lastActive": "2025-01-18T10:30:00Z"
+                },
+                {
+                    "id": "2",
+                    "name": "AnimationChoreographer",
+                    "status": "thinking",
+                    "type": "content",
+                    "description": "Creates dynamic animations for concepts",
+                    "currentTask": "Generating AWS VPC animation sequence",
+                    "capabilities": [
+                        {"name": "Manim Generation", "level": 92},
+                        {"name": "Storytelling", "level": 88},
+                        {"name": "Visual Metaphors", "level": 90}
+                    ],
+                    "performance": {
+                        "averageTime": 5.8,
+                        "successRate": 0.92,
+                        "tasksCompleted": 38
+                    },
+                    "metrics": {
+                        "tasksCompleted": 38,
+                        "successRate": 0.92,
+                        "avgProcessingTime": 5.8
+                    },
+                    "lastActive": "2025-01-18T10:25:00Z"
+                },
+                {
+                    "id": "3",
+                    "name": "DiagramGenerator",
+                    "status": "executing",
+                    "type": "content",
+                    "description": "Generates technical diagrams and visualizations",
+                    "currentTask": "Creating architecture diagram for microservices",
+                    "capabilities": [
+                        {"name": "Architecture Diagrams", "level": 98},
+                        {"name": "Flow Charts", "level": 95},
+                        {"name": "Mind Maps", "level": 93}
+                    ],
+                    "performance": {
+                        "averageTime": 2.1,
+                        "successRate": 0.98,
+                        "tasksCompleted": 56
+                    },
+                    "metrics": {
+                        "tasksCompleted": 56,
+                        "successRate": 0.98,
+                        "avgProcessingTime": 2.1
+                    },
+                    "lastActive": "2025-01-18T10:28:00Z"
+                },
+                {
+                    "id": "4",
+                    "name": "QualityAssurance",
+                    "status": "idle",
+                    "type": "validation",
+                    "description": "Ensures content quality and accuracy",
+                    "currentTask": None,
+                    "capabilities": [
+                        {"name": "Fact Checking", "level": 99},
+                        {"name": "Accessibility", "level": 96},
+                        {"name": "Cert Alignment", "level": 98}
+                    ],
+                    "performance": {
+                        "averageTime": 1.5,
+                        "successRate": 0.99,
+                        "tasksCompleted": 120
+                    },
+                    "metrics": {
+                        "tasksCompleted": 120,
+                        "successRate": 0.99,
+                        "avgProcessingTime": 1.5
+                    },
+                    "lastActive": "2025-01-18T10:32:00Z"
+                }
+            ]
+        }
+    
     @app.get("/api/v1/dashboard/stats")
     async def dashboard_stats():
         return {
